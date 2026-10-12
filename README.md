@@ -31,8 +31,9 @@ An Ubuntu/Debian VM with sudo. On a clean VM, `scripts/install-deps.sh` installs
 ```bash
 sudo apt-get update && sudo apt-get install -y git
 mkdir -p ~/vdt && cd ~/vdt && git clone https://github.com/Acerchicken/Sec-Platform-VDT.git && cd Sec-Platform-VDT
-# mount the SSD at /mnt/ssd first (Guide 1, Step 0.2), then:
-DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh   # re-login afterwards for the docker group
+bash scripts/install-deps.sh                                    # re-login afterwards for the docker group
+# optional, only with a dedicated SSD: mount it at /mnt/ssd (Guide 1, Step 0.2), then instead:
+# DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh
 bash scripts/install-deps.sh                                    # re-run: must end with 0 FAIL
 ```
 

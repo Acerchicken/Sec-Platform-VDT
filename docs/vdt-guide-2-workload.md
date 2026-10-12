@@ -1091,7 +1091,7 @@ lint: ## shellcheck + yamllint (cần cài sẵn)
 #!/usr/bin/env bash
 # install-deps.sh: cài mọi package/binary VM cần cho Guide 1 (admin) và Guide 2 (workload) trên Ubuntu/Debian.
 #   bash scripts/install-deps.sh                                   # cài phần còn thiếu, bỏ qua phần đã có
-#   DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh  # máy sạch: Docker chạy thẳng trên SSD (Guide 1, Bước 0)
+#   DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh  # tùy chọn, VM có SSD riêng đã mount (Guide 1, Bước 0.2)
 #   WITH_LINT=1 bash scripts/install-deps.sh                       # thêm shellcheck + yamllint (cho make lint)
 # Chạy lại bao nhiêu lần cũng được. Chỉ cài trên VM, không đụng tới cluster.
 # Kiểm tra đầy đủ (host + admin cluster) sau khi xong Guide 1: bash scripts/preflight.sh

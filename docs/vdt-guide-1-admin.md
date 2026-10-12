@@ -4,7 +4,7 @@ Hướng dẫn này dựng **Admin cluster** (kind + Cluster API) và các dịc
 
 | Thành phần (sơ đồ kiến trúc)                                           | Chạy ở           | Cách deploy        | Bước |
 |------------------------------------------------------------------------|------------------|--------------------|------|
-| Host: SSD + Docker data-root                                           | VM               | fstab, daemon.json | 0    |
+| Host: package, Docker (+ SSD data-root tùy chọn)                       | VM               | install-deps.sh    | 0    |
 | CAPI controllers + CAPD + **CAAPH** (Helm add-on) + ClusterResourceSet | Admin (kind)     | `clusterctl init`  | 1    |
 | DefectDojo                                                             | Admin            | Helm               | 2    |
 | Loki                                                                   | Admin            | Helm               | 3    |
@@ -24,9 +24,9 @@ Quy ước: mọi lệnh chạy trên VM, thư mục `~/vdt`, `kubectl` mặc đ
 
 ---
 
-## Bước 0 – Chuẩn bị host (repo, SSD, package, Docker, sysctl)
+## Bước 0 – Chuẩn bị host (repo, package, Docker, sysctl; SSD tùy chọn)
 
-Làm **trước khi tạo bất kỳ cụm nào**: toàn bộ node kind/CAPD, image và PVC đều nằm trong Docker data-root, nên Docker phải chạy trên SSD ngay từ đầu.
+Làm **trước khi tạo bất kỳ cụm nào**. Toàn bộ node kind/CAPD, image và PVC đều nằm trong Docker data-root (mặc định `/var/lib/docker`). Nếu VM có ổ/phân vùng SSD riêng, đưa data-root lên SSD ngay từ đầu (0.2) sẽ nhanh hơn. VM chạy trên HDD hoặc chỉ có 1 ổ thì bỏ qua 0.2 và 0.4, giữ mặc định.
 
 **0.1 Lấy repo** (VM sạch chỉ cần `git` để clone; mọi package khác do script ở 0.3 cài)
 
@@ -36,7 +36,7 @@ mkdir -p ~/vdt && cd ~/vdt
 git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
 ```
 
-**0.2 Format + mount SSD** (kiểm tra kỹ tên thiết bị, `mkfs` XÓA sạch ổ)
+**0.2 (Tùy chọn) Format + mount SSD**: chỉ khi VM có ổ/phân vùng SSD riêng; VM chạy trên HDD hoặc chỉ có 1 ổ thì bỏ qua 0.2 và 0.4. Kiểm tra kỹ tên thiết bị, `mkfs` XÓA sạch ổ.
 
 ```bash
 lsblk -f                              # SSD chưa có FSTYPE/MOUNTPOINT, giả sử /dev/vdb
@@ -46,14 +46,16 @@ echo "UUID=$(sudo blkid -s UUID -o value /dev/vdb) /mnt/ssd ext4 defaults,nofail
 sudo mount -a && df -h /mnt/ssd
 ```
 
-**0.3 Cài package** bằng `scripts/install-deps.sh` (Ubuntu/Debian, cần sudo). Đặt `DOCKER_DATA_ROOT` để Docker cài xong là chạy thẳng trên SSD:
+**0.3 Cài package** bằng `scripts/install-deps.sh` (Ubuntu/Debian, cần sudo). Mặc định Docker giữ data-root `/var/lib/docker`; chỉ khi đã làm 0.2 thì đặt `DOCKER_DATA_ROOT` để Docker cài xong là chạy thẳng trên SSD:
 
 ```bash
 cd ~/vdt/Sec-Platform-VDT
-DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh
+bash scripts/install-deps.sh                                     # mặc định (HDD / 1 ổ)
+# hoặc, chỉ khi đã mount SSD ở 0.2:
+# DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh
 # Script thêm user vào nhóm docker: đăng xuất rồi SSH lại (hoặc: newgrp docker), sau đó:
-docker info | grep "Docker Root Dir"                     # phải là /mnt/ssd/docker
-bash scripts/install-deps.sh                             # chạy lại: phải ra 0 FAIL
+docker info | grep "Docker Root Dir"     # /var/lib/docker (mặc định) hoặc /mnt/ssd/docker (nếu làm 0.2)
+bash scripts/install-deps.sh                                     # chạy lại: phải ra 0 FAIL
 ```
 
 | Nhóm | Script cài / làm | Dùng ở |
@@ -66,7 +68,7 @@ bash scripts/install-deps.sh                             # chạy lại: phải 
 
 Script chạy lại bao nhiêu lần cũng được: phần đã có thì bỏ qua. Ghim phiên bản qua biến môi trường, ví dụ `KUBECTL_VERSION=v1.36.1 KIND_VERSION=v0.31.0 bash scripts/install-deps.sh`. Có `make` rồi thì dùng `make deps`. Distro không dùng apt: cài tay các lệnh trong bảng.
 
-**0.4 Chỉ khi Docker đã chạy từ trước, còn dữ liệu ở `/var/lib/docker`**: script không tự chuyển dữ liệu (báo WARN), làm tay:
+**0.4 (Tùy chọn, chỉ khi dùng SSD ở 0.2) Docker đã chạy từ trước, còn dữ liệu ở `/var/lib/docker`**: script không tự chuyển dữ liệu (báo WARN), làm tay:
 
 ```bash
 sudo systemctl stop docker docker.socket
@@ -80,7 +82,7 @@ docker info | grep "Docker Root Dir"                     # phải là /mnt/ssd/d
 sudo mv /var/lib/docker /var/lib/docker.bak              # xóa hẳn sau khi chạy ổn
 ```
 
-Ghi chú: ổ phải là ext4/xfs (overlay2 không chạy trên NTFS/exFAT); nếu Docker cài bằng snap thì đường dẫn cấu hình khác; sau khi chạy cụm, `du -sh /var/lib/docker /var/lib/containerd` không được tăng. Cần tối thiểu ~16 GB RAM (`free -h`): DefectDojo tự nó đã request ~5 GB.
+Ghi chú: ổ chứa Docker data-root (kể cả SSD nếu dùng) phải là ext4/xfs (overlay2 không chạy trên NTFS/exFAT); nếu Docker cài bằng snap thì đường dẫn cấu hình khác; nếu đã chuyển sang SSD thì sau khi chạy cụm, `du -sh /var/lib/docker /var/lib/containerd` không được tăng. Cần tối thiểu ~16 GB RAM (`free -h`): DefectDojo tự nó đã request ~5 GB.
 
 ---
 
@@ -148,7 +150,7 @@ source ~/vdt/env.sh
 
 ## Bước 2 – DefectDojo (gỡ bản cũ, cài lại sạch)
 
-Thiết kế truy cập: DefectDojo chạy NodePort **31080** trên node kind. Không phụ thuộc `extraPortMappings` hay port-forward: các lệnh trên VM dùng `http://<IP node kind>:31080`, còn laptop mở browser qua **SSH tunnel** (xem Bước 7). PVC nằm trong node kind nên tự nằm trên SSD.
+Thiết kế truy cập: DefectDojo chạy NodePort **31080** trên node kind. Không phụ thuộc `extraPortMappings` hay port-forward: các lệnh trên VM dùng `http://<IP node kind>:31080`, còn laptop mở browser qua **SSH tunnel** (xem Bước 7). PVC nằm trong node kind nên nằm trong Docker data-root (trên SSD nếu đã làm 0.2).
 
 **a) Gỡ bản cũ**
 
