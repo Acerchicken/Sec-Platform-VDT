@@ -38,9 +38,9 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 
 ## 1. Chuẩn bị repo (một lần)
 
-Toàn bộ file nằm trong repo `vdt-baseline/` (gói kèm theo guide này, hoặc tạo từ các khối code bên dưới; mỗi khối ghi rõ đường dẫn). Đẩy repo lên Git để CI dùng (mục 7).
+Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
 
-    vdt-baseline/
+    Sec-Platform-VDT/
     ├── Makefile                         # make addons | provision | verify | scan | test-* | e2e
     ├── env.example                      # copy thành .env nếu cần ghi đè
     ├── scripts/
@@ -57,9 +57,9 @@ Toàn bộ file nằm trong repo `vdt-baseline/` (gói kèm theo guide này, ho�
 
 ```bash
 cd ~/vdt
-tar xzf vdt-baseline.tar.gz          # hoặc git clone repo của bạn
-cd vdt-baseline
-chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh
+git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
+cd Sec-Platform-VDT
+chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi clone mất quyền thực thi
 kubectl config current-context       # phải là kind-kind (admin)
 make help
 ```
@@ -815,7 +815,7 @@ make test-policy CLUSTER=team-a
 Chạy tay để demo:
 
 ```bash
-cd ~/vdt/vdt-baseline/workload/tests/fixtures
+cd ~/vdt/Sec-Platform-VDT/workload/tests/fixtures
 kw -n policy-lab apply -f pod-privileged.yaml
 # Error from server: ... admission webhook "validate.kyverno.svc-fail" denied the request:
 #   resource Pod/policy-lab/pt-privileged was blocked due to the following policies
