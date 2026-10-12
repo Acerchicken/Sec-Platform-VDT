@@ -1,0 +1,55 @@
+# Sec runtime: Falco-Talon (phản ứng tự động). Rule chỉ áp cho namespace vuln-lab.
+apiVersion: addons.cluster.x-k8s.io/v1alpha1
+kind: HelmChartProxy
+metadata:
+  name: vdt-falco-talon
+spec:
+  clusterSelector:
+    matchLabels:
+      security-baseline: enabled
+  repoURL: https://falcosecurity.github.io/charts
+  chartName: falco-talon
+  releaseName: falco-talon          # cố định để Service tên falco-talon (Sidekick webhook trỏ vào đây)
+  namespace: falco
+  reconcileStrategy: Continuous
+  options:
+    wait: true
+    timeout: 10m
+    install:
+      createNamespace: true
+  valuesTemplate: |
+    replicaCount: 1
+    config:
+      rulesOverride: |
+        - action: Terminate Pod
+          actionner: kubernetes:terminate
+          parameters:
+            ignore_daemonsets: true
+            ignore_statefulsets: true
+            grace_period_seconds: 0
+
+        - action: Quarantine Pod
+          actionner: kubernetes:label
+          parameters:
+            labels:
+              quarantine: "true"
+
+        - rule: Sensitive file read -> terminate
+          description: RT-1, doc /etc/shadow trong vuln-lab thi xoa pod
+          match:
+            rules:
+              - Read sensitive file untrusted
+            output_fields:
+              - k8s.ns.name=vuln-lab
+          actions:
+            - action: Terminate Pod
+
+        - rule: Miner binary -> quarantine
+          description: RT-2, chay binary dao coin thi gan nhan quarantine (NetworkPolicy cat mang)
+          match:
+            rules:
+              - VDT Miner Binary Executed
+            output_fields:
+              - k8s.ns.name=vuln-lab
+          actions:
+            - action: Quarantine Pod

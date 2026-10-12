@@ -1,0 +1,24 @@
+# Mục tiêu lab: cố ý dùng image cũ + privileged + root để có finding (scan) và để kích hoạt Falco.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulnerable-workload
+  namespace: vuln-lab
+  labels:
+    app: vulnerable-workload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vulnerable-workload
+  template:
+    metadata:
+      labels:
+        app: vulnerable-workload
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.14.2
+          securityContext:
+            privileged: true
+            runAsUser: 0

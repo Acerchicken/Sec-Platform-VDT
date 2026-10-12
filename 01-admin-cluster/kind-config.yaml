@@ -1,0 +1,18 @@
+# Admin (management) cluster - kind
+#   kind create cluster --config 01-admin-cluster/kind-config.yaml
+# Sau đó (CAPI + CAPD + CAAPH Helm add-on + ClusterResourceSet):
+#   export CLUSTER_TOPOLOGY=true EXP_CLUSTER_RESOURCE_SET=true
+#   clusterctl init --infrastructure docker --addon helm
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  ipFamily: dual
+nodes:
+- role: control-plane
+  extraMounts:                     # BẮT BUỘC: để CAPD tạo được container node
+    - hostPath: /var/run/docker.sock
+      containerPath: /var/run/docker.sock
+  extraPortMappings:               # tùy chọn: truy cập từ laptop dùng SSH tunnel nên không bắt buộc
+    - {containerPort: 31080, hostPort: 31080, listenAddress: "0.0.0.0"}   # DefectDojo
+    - {containerPort: 32000, hostPort: 32000, listenAddress: "0.0.0.0"}   # Grafana
+    - {containerPort: 31100, hostPort: 31100, listenAddress: "0.0.0.0"}   # Loki

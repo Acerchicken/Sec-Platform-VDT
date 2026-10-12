@@ -1,0 +1,43 @@
+# ClusterResourceSet: apply manifest thuần (không phải Helm) vào workload theo nhãn.
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: vdt-calico
+spec:
+  strategy: ApplyOnce
+  clusterSelector:
+    matchLabels:
+      cni: calico
+  resources:
+    - kind: ConfigMap
+      name: calico-vxlan
+---
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: vdt-security-baseline
+spec:
+  strategy: Reconcile          # sửa manifest + chạy lại render.sh -> tự đồng bộ xuống mọi cluster
+  clusterSelector:
+    matchLabels:
+      security-baseline: enabled
+  resources:                   # policy để cuối: cần CRD của Kyverno, CRS tự thử lại tới khi có
+    - kind: ConfigMap
+      name: sec-baseline-namespaces
+    - kind: ConfigMap
+      name: sec-baseline-netpol
+    - kind: ConfigMap
+      name: sec-baseline-policies
+---
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: vdt-lab-target
+spec:
+  strategy: ApplyOnce
+  clusterSelector:
+    matchLabels:
+      lab-target: enabled
+  resources:
+    - kind: ConfigMap
+      name: sec-lab-target

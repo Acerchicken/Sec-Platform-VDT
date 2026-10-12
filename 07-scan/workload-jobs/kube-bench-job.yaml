@@ -1,0 +1,28 @@
+# kube-bench CIS (target node) - WORKLOAD cluster, ns security-scan
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-bench
+  namespace: security-scan
+  labels: {app.kubernetes.io/part-of: vdt-scan, scanner: kube-bench}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: {scanner: kube-bench}
+    spec:
+      hostPID: true
+      restartPolicy: Never
+      containers:
+      - name: kube-bench
+        image: aquasec/kube-bench:latest     # nên pin version
+        command: ["kube-bench", "run", "--targets", "node", "--json"]   # lỗi nhận diện version: thêm --benchmark cis-x.y
+        volumeMounts:
+        - {name: kubelet, mountPath: /var/lib/kubelet, readOnly: true}
+        - {name: k8s, mountPath: /etc/kubernetes, readOnly: true}
+        - {name: systemd, mountPath: /etc/systemd, readOnly: true}
+      volumes:
+      - {name: kubelet, hostPath: {path: /var/lib/kubelet}}
+      - {name: k8s, hostPath: {path: /etc/kubernetes}}
+      - {name: systemd, hostPath: {path: /etc/systemd}}

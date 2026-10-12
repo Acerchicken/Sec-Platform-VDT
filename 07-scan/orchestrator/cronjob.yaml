@@ -1,0 +1,35 @@
+# Scan orchestrator trên ADMIN cluster - chạy mỗi 6 giờ.
+# ConfigMap/Secret (script, template Job, kubeconfig, API key, env) do kustomization.yaml sinh ra.
+# PoC dùng kubeconfig quản trị của Workload cluster; production thay bằng OIDC + RBAC giới hạn.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scan-orchestrator
+  namespace: scan-orchestrator
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: orchestrator
+            image: alpine/k8s:1.31.2      # cần bash, kubectl, curl, sed, md5sum; pin tag phù hợp
+            command: ["bash", "/scripts/scan-orchestrator.sh"]
+            env:
+            - {name: WORKLOAD_KUBECONFIG, value: /kube/kubeconfig}
+            - {name: TEMPLATE_DIR, value: /scripts}
+            envFrom:
+            - configMapRef: {name: orchestrator-env}     # DOJO_URL, PG_TARGET_IP
+            - secretRef: {name: dojo-api}                # DOJO_API_KEY
+            volumeMounts:
+            - {name: script, mountPath: /scripts}
+            - {name: kube, mountPath: /kube, readOnly: true}
+          volumes:
+          - {name: script, configMap: {name: orchestrator-script}}
+          - {name: kube, secret: {secretName: workload-kubeconfig}}

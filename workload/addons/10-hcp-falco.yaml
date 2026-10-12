@@ -1,0 +1,46 @@
+# Sec runtime: Falco (DaemonSet) + Falcosidekick (fan-out Loki + Talon).
+# __LOKI_URL__ được scripts/render.sh thay bằng http://<ADMIN_NODE_IP>:31100
+apiVersion: addons.cluster.x-k8s.io/v1alpha1
+kind: HelmChartProxy
+metadata:
+  name: vdt-falco
+spec:
+  clusterSelector:
+    matchLabels:
+      security-baseline: enabled
+  repoURL: https://falcosecurity.github.io/charts
+  chartName: falco
+  # version: "x.y.z"   # pin sau khi chạy ổn: helm search repo falcosecurity/falco --versions
+  releaseName: falco
+  namespace: falco
+  reconcileStrategy: Continuous
+  options:
+    wait: true
+    timeout: 10m
+    install:
+      createNamespace: true
+  valuesTemplate: |
+    driver:
+      kind: modern_ebpf
+    tty: true
+    customRules:
+      vdt-rules.yaml: |-
+        - rule: VDT Miner Binary Executed
+          desc: Simulated crypto-miner binary (named xmrig) executed inside a container (PoC)
+          condition: spawned_process and container and proc.name = xmrig
+          output: Miner binary executed (proc=%proc.name cmdline=%proc.cmdline pod=%k8s.pod.name ns=%k8s.ns.name image=%container.image.repository)
+          priority: CRITICAL
+          tags: [vdt, poc, mitre_execution]
+    falcosidekick:
+      enabled: true
+      webui:
+        enabled: false
+      config:
+        customfields: "tenant_id:tenant-poc,target_id:{{ .Cluster.metadata.name }}"
+        loki:
+          hostport: "__LOKI_URL__"
+          minimumpriority: "notice"
+          extralabels: "tenant_id,target_id"
+        webhook:
+          address: "http://falco-talon:2803"
+          minimumpriority: "notice"

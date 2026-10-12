@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pt-latest
+  labels: {app: policy-test}
+spec:
+  securityContext: {runAsNonRoot: true, runAsUser: 1000}
+  containers:
+    - name: c
+      image: busybox:latest
+      command: ["sleep", "3600"]

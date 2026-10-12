@@ -1,0 +1,6 @@
+# Secret / file sinh ra lúc chạy
+.env
+.kube-*.yaml
+*.kubeconfig
+.build/
+/rendered/

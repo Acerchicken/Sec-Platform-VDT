@@ -1,0 +1,32 @@
+# Namespace dùng chung. PSA để privileged CÓ CHỦ ĐÍCH (lab):
+# - falco, security-scan: DaemonSet/Job cần quyền host.
+# - vuln-lab: workload cố ý vi phạm làm mục tiêu cho scan/runtime.
+# - policy-lab: để Kyverno (không phải PSA) là lớp chặn khi chạy kịch bản PE-*.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: falco
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-scan
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vuln-lab
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: policy-lab
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    policy: enforce              # Kyverno chỉ chặn ở namespace có nhãn này

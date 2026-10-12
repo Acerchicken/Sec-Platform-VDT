@@ -1,0 +1,97 @@
+# Policy Enforcement: 3 ClusterPolicy chế độ Enforce, chỉ áp cho namespace có nhãn policy=enforce.
+# Kyverno tự sinh rule tương ứng cho Deployment/StatefulSet/Job... (autogen).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vdt-disallow-privileged
+  annotations:
+    policies.kyverno.io/title: Disallow privileged containers
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  policy: enforce
+      validate:
+        message: "[vdt-disallow-privileged] Privileged containers are not allowed."
+        pattern:
+          spec:
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false"
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vdt-disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Require explicit, non-latest image tag
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  policy: enforce
+      validate:
+        message: "[vdt-disallow-latest-tag] Image must have an explicit tag."
+        pattern:
+          spec:
+            containers:
+              - image: "*:*"
+    - name: no-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  policy: enforce
+      validate:
+        message: "[vdt-disallow-latest-tag] Image tag ':latest' is not allowed."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: vdt-require-nonroot
+  annotations:
+    policies.kyverno.io/title: Require runAsNonRoot
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: run-as-nonroot
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  policy: enforce
+      validate:
+        message: "[vdt-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true

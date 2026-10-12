@@ -1,0 +1,27 @@
+# Scan orchestrator (ADMIN cluster).  kubectl apply -k 07-scan/
+# Trước khi apply cần có: orchestrator.env, secrets/workload.kubeconfig, secrets/dojo-api.env
+# Chạy ngay 1 lần: kubectl -n scan-orchestrator create job --from=cronjob/scan-orchestrator scan-now
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: scan-orchestrator
+resources:
+  - orchestrator/namespace.yaml
+  - orchestrator/cronjob.yaml
+configMapGenerator:
+  - name: orchestrator-script
+    files:
+      - scan-orchestrator.sh=orchestrator/scan-orchestrator.sh
+      - scan-target.yaml=workload-jobs/scan-target.yaml
+      - trivy-job.yaml.tpl=workload-jobs/trivy-job.yaml.tpl
+      - kube-bench-job.yaml=workload-jobs/kube-bench-job.yaml
+      - db-scan-job.yaml=workload-jobs/db-scan-job.yaml
+  - name: orchestrator-env
+    envs:
+      - orchestrator.env
+secretGenerator:
+  - name: workload-kubeconfig
+    files:
+      - kubeconfig=secrets/workload.kubeconfig
+  - name: dojo-api
+    envs:
+      - secrets/dojo-api.env

@@ -1,0 +1,81 @@
+# Scan orchestrator (ADMIN cluster): CronJob quét mọi workload cluster có nhãn security-baseline=enabled.
+# Script nằm ở ConfigMap scan-orchestrator/scan-scripts (make addons nạp từ workload/scan/).
+# CronJob tạo ở trạng thái suspend; bật sau khi có ConfigMap:
+#   kubectl -n scan-orchestrator patch cronjob scan-orchestrator -p '{"spec":{"suspend":false}}'
+# Cài (thay __PG_TARGET_IP__ bằng IP container pg-target):
+#   source env.sh
+#   kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n scan-orchestrator create secret generic dojo-api --from-literal=token="$DOJO_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl -n scan-orchestrator create secret generic pg-target --from-literal=password=poc-weak-pass --dry-run=client -o yaml | kubectl apply -f -
+#   sed "s|__PG_TARGET_IP__|${PG_TARGET_IP}|" 05-admin-apps/orchestrator/orchestrator.yaml | kubectl apply -f -
+# Nếu PG_TARGET_IP đổi sau khi resume Docker: chạy lại lệnh sed ... | kubectl apply trên.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scan-orchestrator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: orchestrator, namespace: scan-orchestrator}
+---
+# Quyền tối thiểu: đọc Cluster và secret kubeconfig trong namespace default (nơi chứa các Cluster CAPI)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: scan-orchestrator-read, namespace: default}
+rules:
+- apiGroups: ["cluster.x-k8s.io"]
+  resources: ["clusters"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: scan-orchestrator-read, namespace: default}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: scan-orchestrator-read}
+subjects:
+- {kind: ServiceAccount, name: orchestrator, namespace: scan-orchestrator}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: scan-orchestrator, namespace: scan-orchestrator}
+spec:
+  schedule: "0 */6 * * *"
+  suspend: true                      # bật lên sau khi có ConfigMap scan-scripts (xem đầu file)
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: orchestrator
+          restartPolicy: Never
+          containers:
+          - name: orchestrator
+            image: alpine/k8s:1.31.2     # cần bash, kubectl, curl, jq; pin tag đã kiểm chứng
+            command: ["bash", "-c"]
+            args:
+            - |
+              set -euo pipefail
+              clusters=$(kubectl -n default get clusters -l security-baseline=enabled -o jsonpath='{.items[*].metadata.name}')
+              [ -n "$clusters" ] || { echo "không có cluster nào gắn nhãn security-baseline=enabled"; exit 0; }
+              rc=0
+              for c in $clusters; do
+                echo "===== $c"
+                kubectl -n default get secret "$c-kubeconfig" -o jsonpath='{.data.value}' | base64 -d > "/tmp/$c.kubeconfig"
+                bash /scripts/run-scans.sh "/tmp/$c.kubeconfig" "$c" || rc=1
+              done
+              exit $rc
+            env:
+            - {name: DOJO_URL, value: "http://defectdojo-django.defectdojo.svc.cluster.local"}
+            - {name: PG_TARGET_IP, value: "__PG_TARGET_IP__"}
+            - name: DOJO_API_KEY
+              valueFrom: {secretKeyRef: {name: dojo-api, key: token}}
+            - name: PG_TARGET_PASSWORD
+              valueFrom: {secretKeyRef: {name: pg-target, key: password}}
+            volumeMounts:
+            - {name: scripts, mountPath: /scripts}
+          volumes:
+          - name: scripts
+            configMap: {name: scan-scripts, optional: true}

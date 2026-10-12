@@ -1,0 +1,69 @@
+# DefectDojo trên ADMIN cluster - NodePort 31080
+# helm repo add defectdojo https://raw.githubusercontent.com/DefectDojo/django-DefectDojo/helm-charts
+# helm upgrade --install defectdojo defectdojo/defectdojo -n defectdojo --create-namespace \
+#   -f 05-admin-apps/defectdojo/values.yaml --wait --timeout 15m
+# Kiểm tra: kubectl -n defectdojo get svc defectdojo-django  -> 80:31080/TCP
+createSecret: true
+createValkeySecret: true
+createPostgresqlSecret: true
+
+host: localhost
+alternativeHosts: ["*"]        # lab: cho phép truy cập qua IP node và SSH tunnel
+
+admin:
+  username: "admin"
+  password: "AdminDojoPassword123!"      # chỉ dùng cho lab
+
+django:
+  nodePort: 31080              # chart đọc django.nodePort (django.service.nodePort bị bỏ qua)
+  ingress:
+    enabled: false
+  service:
+    type: NodePort
+  livenessProbe:
+    initialDelaySeconds: 180
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 10
+  readinessProbe:
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 10
+  uwsgi:
+    resources:
+      requests: {cpu: 200m, memory: 1500Mi}
+      limits: {memory: 3Gi}
+    appSettings:
+      maxFd: 102400
+      processes: 1
+      threads: 2
+    livenessProbe:
+      initialDelaySeconds: 180
+      periodSeconds: 15
+      failureThreshold: 10
+    readinessProbe:
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      failureThreshold: 10
+  nginx:
+    resources:
+      requests: {cpu: 100m, memory: 1028Mi}
+      limits: {memory: 2056Mi}
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      size: 5Gi
+
+celery:
+  beat:
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {memory: 2512Mi}
+  worker:
+    replicas: 1
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {memory: 2536Mi}

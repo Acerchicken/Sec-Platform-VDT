@@ -1,0 +1,34 @@
+# DB target check: SSL, password_encryption, version -> JSON "Generic Findings Import"
+# WORKLOAD cluster, ns security-scan. Đọc PGHOST/PGUSER từ ConfigMap scan-target, PGPASSWORD từ Secret pg-target-cred.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-scan
+  namespace: security-scan
+  labels: {app.kubernetes.io/part-of: vdt-scan, scanner: db-scan}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: {scanner: db-scan}
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: db-scan
+        image: postgres:16-alpine
+        envFrom:
+        - configMapRef: {name: scan-target}
+        - secretRef: {name: pg-target-cred}
+        command: ["sh", "-c"]
+        args:
+        - |
+          set -e
+          q() { psql -Atc "$1"; }
+          VER=$(q "show server_version"); SSL=$(q "show ssl"); ENC=$(q "show password_encryption")
+          out=""
+          add() { out="${out}${out:+,}{\"title\":\"$1\",\"severity\":\"$2\",\"description\":\"$3\"}"; }
+          [ "$SSL" = "off" ] && add "PostgreSQL SSL disabled" "High" "ssl=off on $PGHOST"
+          [ "$ENC" = "md5" ] && add "Weak password_encryption (md5)" "Medium" "Use scram-sha-256"
+          [ "${VER%%.*}" -lt 15 ] && add "PostgreSQL outdated version $VER" "High" "Upgrade to a supported major version"
+          printf '{"findings":[%s]}\n' "$out"

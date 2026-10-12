@@ -1,0 +1,29 @@
+# Policy enforcement: Kyverno (admission webhook). Policy nằm trong manifests/10-kyverno-policies.yaml (CRS).
+apiVersion: addons.cluster.x-k8s.io/v1alpha1
+kind: HelmChartProxy
+metadata:
+  name: vdt-kyverno
+spec:
+  clusterSelector:
+    matchLabels:
+      security-baseline: enabled
+  repoURL: https://kyverno.github.io/kyverno/
+  chartName: kyverno
+  # version: "x.y.z"   # pin sau khi chạy ổn: helm search repo kyverno/kyverno --versions
+  releaseName: kyverno
+  namespace: kyverno
+  reconcileStrategy: Continuous
+  options:
+    wait: true
+    timeout: 10m
+    install:
+      createNamespace: true
+  valuesTemplate: |
+    admissionController:
+      replicas: 1
+    backgroundController:
+      replicas: 1
+    cleanupController:
+      replicas: 1
+    reportsController:
+      replicas: 1

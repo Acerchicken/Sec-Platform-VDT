@@ -1,0 +1,11 @@
+# Pod bị Talon gắn nhãn quarantine=true sẽ bị cắt toàn bộ mạng vào/ra (Calico thực thi).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quarantine-deny-all
+  namespace: vuln-lab
+spec:
+  podSelector:
+    matchLabels:
+      quarantine: "true"
+  policyTypes: [Ingress, Egress]
