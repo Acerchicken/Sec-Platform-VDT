@@ -1,33 +1,34 @@
 # VDT Phase 2 – Security Platform: manifests
 
-Khớp với **Guide 1/2 (Admin cluster)** và **Guide 2/2 (Workload cluster, tự cài khi cấp phát)**.
-Admin cluster (kind + CAPI + CAPD + CAAPH) khai báo một lần; workload cluster nào có nhãn `security-baseline=enabled`
-sẽ tự có Falco/Sidekick/Talon, Kyverno, namespace, NetworkPolicy, policy. Không còn `helm install` tay vào workload.
+Matches **Guide 1/2 (Admin cluster)** and **Guide 2/2 (Workload cluster, auto-installed at provisioning)**, see [`docs/vdt-guide-1-admin.md`](docs/vdt-guide-1-admin.md) and [`docs/vdt-guide-2-workload.md`](docs/vdt-guide-2-workload.md).
+The admin cluster (kind + CAPI + CAPD + CAAPH) is declared once; any workload cluster labeled `security-baseline=enabled`
+automatically gets Falco/Sidekick/Talon, Kyverno, namespaces, NetworkPolicy and policies. No more manual `helm install` into workloads.
 
 ```
 01-admin-cluster/kind-config.yaml            Admin: kind
-02-workload-cluster/                         Admin (kubectl): ClusterClass, Cluster (có nhãn), calico.yaml (cluster cài Calico tay)
-04-pg-target/compose.yaml                    Docker (network kind): PostgreSQL target
+02-workload-cluster/                         Admin (kubectl): ClusterClass, Cluster (labeled), calico.yaml (for clusters with Calico installed manually)
+04-pg-target/compose.yaml                    Docker (kind network): PostgreSQL target
 05-admin-apps/defectdojo|loki|grafana        Admin (helm): values
-05-admin-apps/orchestrator/orchestrator.yaml Admin: CronJob scan-orchestrator (đa cluster, mặc định suspend)
+05-admin-apps/orchestrator/orchestrator.yaml Admin: scan-orchestrator CronJob (multi-cluster, suspended by default)
 workload/addons/                             Admin: HelmChartProxy (Falco, Talon, Kyverno) + ClusterResourceSet
-workload/manifests/                          CRS apply xuống workload: namespace, Kyverno policy, quarantine NetworkPolicy, lab target
-workload/scan/                               run-scans.sh + template Job (nạp vào ConfigMap scan-scripts)
+workload/manifests/                          Applied to workloads by CRS: namespaces, Kyverno policies, quarantine NetworkPolicy, lab target
+workload/scan/                               run-scans.sh + Job templates (loaded into the scan-scripts ConfigMap)
 workload/tests/                              verify, RT-1..3, PE-1..5, e2e, fixtures
 scripts/                                     lib.sh, render.sh, provision-cluster.sh, scan-now.sh
-Makefile, env.sh, env.example                Điểm vào: make addons | provision | verify | scan | test | e2e
-.github/workflows/baseline.yml               CI (lint trên GitHub, apply/test/e2e trên self-hosted runner vdt-vm)
+Makefile, env.sh, env.example                Entry points: make addons | provision | verify | scan | test | e2e
+.github/workflows/baseline.yml               CI (lint on GitHub; apply/test/e2e on the self-hosted runner vdt-vm)
+docs/                                        Guide 1/2 (Admin) and Guide 2/2 (Workload), in Vietnamese
 ```
 
-Nhãn trên đối tượng `Cluster`: `security-baseline=enabled` (tool bảo mật), `lab-target=enabled` (vulnerable-workload),
-`cni=calico` (Calico qua CRS, chỉ cho cluster chưa có CNI).
+Labels on the `Cluster` object: `security-baseline=enabled` (security tools), `lab-target=enabled` (vulnerable-workload),
+`cni=calico` (Calico via CRS, only for clusters that have no CNI yet).
 
-## Điều kiện
+## Prerequisites
 
-Đã làm Bước 0 của Guide 1 (SSD, Docker data-root, inotify) và có `docker kubectl kind helm clusterctl jq make`.
-Mọi lệnh chạy trên VM, tại thư mục gốc repo, kubectl trỏ admin (`kind-kind`). Sau khi clone: `chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh`.
+Step 0 of Guide 1 is done (SSD, Docker data-root, inotify) and `docker kubectl kind helm clusterctl jq make` are installed.
+All commands run on the VM, from the repo root, with kubectl pointing at the admin cluster (`kind-kind`). After cloning: `chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh`.
 
-## Thứ tự deploy
+## Deployment order
 
 ```bash
 # Guide 1 – Admin
@@ -42,7 +43,7 @@ helm repo update
 helm upgrade --install defectdojo defectdojo/defectdojo -n defectdojo --create-namespace \
   -f 05-admin-apps/defectdojo/values.yaml --wait --timeout 15m
 helm upgrade --install loki grafana/loki -n logging --create-namespace -f 05-admin-apps/loki/values.yaml
-export GRAFANA_PASS='<đặt-mật-khẩu>'
+export GRAFANA_PASS='<set-a-password>'
 export DOJO_DB_PASS=$(kubectl -n defectdojo get secret defectdojo-postgresql-specific -o jsonpath='{.data.postgresql-password}' | base64 -d)
 envsubst '${GRAFANA_PASS} ${DOJO_DB_PASS}' < 05-admin-apps/grafana/values.yaml.tpl \
   | helm upgrade --install grafana grafana/grafana -n monitoring --create-namespace -f -
@@ -53,39 +54,39 @@ DOJO_PASS=$(kubectl -n defectdojo get secret defectdojo -o jsonpath='{.data.DD_A
 export DOJO_API_KEY=$(curl -sS -X POST "$DOJO_URL/api/v2/api-token-auth/" -H 'Content-Type: application/json' \
   -d "{\"username\":\"admin\",\"password\":\"$DOJO_PASS\"}" | jq -r .token)
 
-# Orchestrator (header của file có đủ lệnh tạo secret; bước này tạo CronJob ở trạng thái suspend)
+# Orchestrator (the file header has all the secret-creation commands; this step creates the CronJob in suspended state)
 kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n scan-orchestrator create secret generic dojo-api --from-literal=token="$DOJO_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n scan-orchestrator create secret generic pg-target --from-literal=password=poc-weak-pass --dry-run=client -o yaml | kubectl apply -f -
 sed "s|__PG_TARGET_IP__|${PG_TARGET_IP}|" 05-admin-apps/orchestrator/orchestrator.yaml | kubectl apply -f -
 
-# Guide 2 – bật cơ chế tự cài, rồi bật CronJob
+# Guide 2 – enable auto-install, then enable the CronJob
 make addons
 kubectl -n scan-orchestrator patch cronjob scan-orchestrator -p '{"spec":{"suspend":false}}'
 
-# Cấp phát workload mới (tự có đủ tool)
+# Provision a new workload (gets all tools automatically)
 make provision NAME=team-a
 make verify CLUSTER=team-a
 make test-runtime CLUSTER=team-a && make test-policy CLUSTER=team-a
-make scan CLUSTER=team-a                                       # cần DOJO_API_KEY
+make scan CLUSTER=team-a                                       # requires DOJO_API_KEY
 ```
 
-### Đưa `capi-quickstart` (đã cài Calico/Falco/Talon bằng tay) vào cơ chế tự cài
+### Bringing `capi-quickstart` (Calico/Falco/Talon installed manually) under auto-install
 
 ```bash
 make addons
 source env.sh
-hw uninstall falco-talon -n falco || true     # gỡ bản cài tay để CAAPH quản lý, tránh trùng release
+hw uninstall falco-talon -n falco || true     # remove the manual install so CAAPH manages it, avoiding duplicate releases
 hw uninstall falco -n falco || true
-kubectl label cluster capi-quickstart security-baseline=enabled lab-target=enabled --overwrite   # KHÔNG gắn cni=calico
+kubectl label cluster capi-quickstart security-baseline=enabled lab-target=enabled --overwrite   # do NOT add cni=calico
 make verify CLUSTER=capi-quickstart
 ```
 
-## Lưu ý
+## Notes
 
-- **IP đổi sau khi resume Docker**: `source env.sh`, chạy lại `make addons` (CAAPH tự cập nhật địa chỉ Loki cho Sidekick),
-  và nếu `PG_TARGET_IP` đổi thì chạy lại lệnh `sed ... | kubectl apply` của orchestrator.
-- `workload/addons/10-hcp-falco.yaml` chứa `__LOKI_URL__`: `scripts/render.sh` thay bằng địa chỉ thật khi apply. Đừng `kubectl apply` trực tiếp file này.
-- ClusterResourceSet dùng `addons.cluster.x-k8s.io/v1beta2` (cùng phiên bản với `Cluster`/`ClusterClass` trong repo này).
-- Image `trivy`, `kube-bench`, `alpine/k8s`, chart Falco/Kyverno chưa pin version: nên pin trước khi demo (xem comment trong từng file).
-- Policy Kyverno chỉ áp cho namespace có nhãn `policy=enforce` (mặc định `policy-lab`); `vuln-lab` cố ý không gắn để mục tiêu lab còn chạy được.
+- **IPs change after Docker resumes**: `source env.sh`, re-run `make addons` (CAAPH updates the Loki address for Sidekick automatically),
+  and if `PG_TARGET_IP` changed, re-run the orchestrator `sed ... | kubectl apply` command.
+- `workload/addons/10-hcp-falco.yaml` contains `__LOKI_URL__`: `scripts/render.sh` replaces it with the real address when applying. Do not `kubectl apply` this file directly.
+- ClusterResourceSet uses `addons.cluster.x-k8s.io/v1beta2` (same version as `Cluster`/`ClusterClass` in this repo).
+- The `trivy`, `kube-bench`, `alpine/k8s` images and the Falco/Kyverno charts are not version-pinned yet: pin them before the demo (see the comments in each file).
+- Kyverno policies only apply to namespaces labeled `policy=enforce` (default `policy-lab`); `vuln-lab` is intentionally left unlabeled so the lab target keeps running.
