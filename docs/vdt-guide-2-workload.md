@@ -56,7 +56,8 @@ Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https:/
     └── .github/workflows/baseline.yml   # CI
 
 ```bash
-cd ~/vdt
+sudo apt-get update && sudo apt-get install -y make git jq    # VM mặc định chưa có make
+mkdir -p ~/vdt && cd ~/vdt
 git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
 cd Sec-Platform-VDT
 chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi clone mất quyền thực thi
