@@ -77,10 +77,11 @@ make help                            # từ giờ dùng được make; kiểm tr
 
 | Nhóm             | Kiểm tra                                                                                                    | `--install` tự xử lý                                                                       |
 |------------------|-------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| Lệnh trên VM     | `make` (GNU ≥ 3.82), `git`, `jq`, `curl`, `awk`, `sed`, `base64`, `tar`, `docker`, `kubectl`, `kind`, `helm`, `clusterctl`; `shellcheck`/`yamllint` (WARN, chỉ cho `make lint`) | Cài qua apt; `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` v1.14.0 vào `/usr/local/bin` |
+| Lệnh trên VM     | `make` (GNU ≥ 3.82), `git`, `jq`, `curl`, `awk`, `sed`, `base64`, `tar`, `envsubst`, `md5sum`, `timeout`, `docker`, `kubectl`, `kind`, `helm`, `clusterctl`; `shellcheck`/`yamllint` (WARN, chỉ cho `make lint`) | Cài qua apt (`envsubst` từ gói `gettext-base`); `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` v1.14.0 vào `/usr/local/bin` |
 | Docker           | daemon chạy, user hiện tại dùng được không cần `sudo`                                                       | `docker.io` qua apt, bật service, thêm user vào nhóm `docker` (đăng nhập lại sau đó)       |
 | Host             | kernel ≥ 5.8 và có BTF (`/sys/kernel/btf/vmlinux`) cho Falco `modern_ebpf`; inotify; RAM tổng/trống; dung lượng Docker root | Ghi sysctl inotify như Guide 1, Bước 0.3. Kernel/RAM/ổ đĩa phải xử lý tay                  |
 | Admin cluster    | context `kind-kind`, container `kind-control-plane`; CRD + controller CAPI, CAPD, CAAPH, cert-manager; ClusterResourceSet bật; ClusterClass `quick-start`; CronJob orchestrator; Loki `:31100`, DefectDojo `:31080` | Không tự cài: làm lại bước tương ứng ở Guide 1 (thông báo FAIL ghi rõ bước)                |
+| Mạng ra ngoài    | Kết nối tới Helm repo Falco (`falcosecurity.github.io/charts`), Kyverno (`kyverno.github.io/kyverno`), `raw.githubusercontent.com`, Docker Hub (`registry-1.docker.io`); không phản hồi (HTTP `000`) là FAIL | Không tự sửa: kiểm tra proxy/firewall/DNS của VM. CAAPH và node CAPD pull chart/image qua mạng này khi cấp phát |
 
 Phiên bản có thể ghim qua biến môi trường: `KUBECTL_VERSION=v1.36.1 KIND_VERSION=v0.31.0 bash scripts/preflight.sh --install`. Tự cài chỉ hỗ trợ Ubuntu/Debian; distro khác cài tay các lệnh bị FAIL rồi chạy lại phần kiểm tra.
 
@@ -1127,8 +1128,8 @@ do_install() {
   step "Cài gói còn thiếu"
   has apt-get || { fail "chỉ hỗ trợ tự cài trên Ubuntu/Debian (apt); distro khác cài tay các lệnh bên dưới"; return; }
   sudo apt-get update -qq
-  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip >/dev/null \
-    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip"
+  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base >/dev/null \
+    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base"
 
   if ! has docker; then
     sudo apt-get install -y -qq docker.io >/dev/null && pass "apt: docker.io"
@@ -1178,7 +1179,7 @@ do_install() {
 
 # ---------- 1) Lệnh trên VM
 step "1. Lệnh cần có trên VM"
-for c in bash make git jq curl awk sed base64 tar docker kubectl kind helm clusterctl; do
+for c in bash make git jq curl awk sed base64 tar envsubst md5sum timeout docker kubectl kind helm clusterctl; do
   if has "$c"; then pass "$c"; else fail "thiếu $c (chạy: bash scripts/preflight.sh --install)"; fi
 done
 if has make; then
@@ -1218,8 +1219,16 @@ if has docker && docker info >/dev/null 2>&1; then
     || warn "Docker root $droot chỉ còn ${free_gb} GB (mỗi workload thêm vài GB image)"
 fi
 
-# ---------- 3) Admin cluster (cài theo Guide 1)
-step "3. Admin cluster (Guide 1)"
+# ---------- 3) Mạng ra ngoài (pull chart/image khi cấp phát workload)
+step "3. Mạng ra ngoài"
+for u in https://falcosecurity.github.io/charts/index.yaml https://kyverno.github.io/kyverno/index.yaml \
+         https://raw.githubusercontent.com https://registry-1.docker.io/v2/; do
+  code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$u")"
+  [ "$code" != 000 ] && pass "$u (HTTP $code)" || fail "không kết nối được $u (kiểm tra proxy/firewall/DNS)"
+done
+
+# ---------- 4) Admin cluster (cài theo Guide 1)
+step "4. Admin cluster (Guide 1)"
 if ! has kubectl || ! kubectl version --request-timeout=5s >/dev/null 2>&1; then
   fail "kubectl không kết nối được admin cluster: làm Guide 1, Bước 1 trước"
 else

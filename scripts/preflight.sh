@@ -43,8 +43,8 @@ do_install() {
   step "Cài gói còn thiếu"
   has apt-get || { fail "chỉ hỗ trợ tự cài trên Ubuntu/Debian (apt); distro khác cài tay các lệnh bên dưới"; return; }
   sudo apt-get update -qq
-  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip >/dev/null \
-    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip"
+  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base >/dev/null \
+    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base"
 
   if ! has docker; then
     sudo apt-get install -y -qq docker.io >/dev/null && pass "apt: docker.io"
@@ -94,7 +94,7 @@ do_install() {
 
 # ---------- 1) Lệnh trên VM
 step "1. Lệnh cần có trên VM"
-for c in bash make git jq curl awk sed base64 tar docker kubectl kind helm clusterctl; do
+for c in bash make git jq curl awk sed base64 tar envsubst md5sum timeout docker kubectl kind helm clusterctl; do
   if has "$c"; then pass "$c"; else fail "thiếu $c (chạy: bash scripts/preflight.sh --install)"; fi
 done
 if has make; then
@@ -134,8 +134,16 @@ if has docker && docker info >/dev/null 2>&1; then
     || warn "Docker root $droot chỉ còn ${free_gb} GB (mỗi workload thêm vài GB image)"
 fi
 
-# ---------- 3) Admin cluster (cài theo Guide 1)
-step "3. Admin cluster (Guide 1)"
+# ---------- 3) Mạng ra ngoài (pull chart/image khi cấp phát workload)
+step "3. Mạng ra ngoài"
+for u in https://falcosecurity.github.io/charts/index.yaml https://kyverno.github.io/kyverno/index.yaml \
+         https://raw.githubusercontent.com https://registry-1.docker.io/v2/; do
+  code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$u")"
+  [ "$code" != 000 ] && pass "$u (HTTP $code)" || fail "không kết nối được $u (kiểm tra proxy/firewall/DNS)"
+done
+
+# ---------- 4) Admin cluster (cài theo Guide 1)
+step "4. Admin cluster (Guide 1)"
 if ! has kubectl || ! kubectl version --request-timeout=5s >/dev/null 2>&1; then
   fail "kubectl không kết nối được admin cluster: làm Guide 1, Bước 1 trước"
 else
