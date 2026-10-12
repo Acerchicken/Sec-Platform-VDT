@@ -44,6 +44,7 @@ Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https:/
     ├── Makefile                         # make addons | provision | verify | scan | test-* | e2e
     ├── env.example                      # copy thành .env nếu cần ghi đè
     ├── scripts/
+    │   ├── preflight.sh                 # kiểm tra + cài phụ thuộc trên VM, kiểm tra admin cluster
     │   ├── lib.sh                       # hàm dùng chung (kw, use_cluster, wait_for)
     │   ├── render.sh                    # nạp ConfigMap + apply HelmChartProxy/CRS lên admin
     │   ├── provision-cluster.sh         # cấp phát workload + gắn nhãn
@@ -56,14 +57,34 @@ Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https:/
     └── .github/workflows/baseline.yml   # CI
 
 ```bash
-sudo apt-get update && sudo apt-get install -y make git jq    # VM mặc định chưa có make
+sudo apt-get update && sudo apt-get install -y git           # chỉ cần git để clone; phần còn lại do preflight cài
 mkdir -p ~/vdt && cd ~/vdt
 git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
 cd Sec-Platform-VDT
 chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi clone mất quyền thực thi
-kubectl config current-context       # phải là kind-kind (admin)
-make help
 ```
+
+### 1.1 Kiểm tra và cài phụ thuộc
+
+VM mới (hoặc vừa dựng lại) thường thiếu `make`, `jq`, `clusterctl`... `scripts/preflight.sh` chạy bằng `bash` nên dùng được cả khi chưa có `make`:
+
+```bash
+bash scripts/preflight.sh --install  # cài phần còn thiếu trên VM (apt + /usr/local/bin, cần sudo), rồi kiểm tra
+bash scripts/preflight.sh            # chỉ kiểm tra; phải ra "0 FAIL" (WARN được phép)
+kubectl config current-context       # phải là kind-kind (admin)
+make help                            # từ giờ dùng được make; kiểm tra lại bất cứ lúc nào: make preflight
+```
+
+| Nhóm             | Kiểm tra                                                                                                    | `--install` tự xử lý                                                                       |
+|------------------|-------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| Lệnh trên VM     | `make` (GNU ≥ 3.82), `git`, `jq`, `curl`, `awk`, `sed`, `base64`, `tar`, `docker`, `kubectl`, `kind`, `helm`, `clusterctl`; `shellcheck`/`yamllint` (WARN, chỉ cho `make lint`) | Cài qua apt; `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` v1.14.0 vào `/usr/local/bin` |
+| Docker           | daemon chạy, user hiện tại dùng được không cần `sudo`                                                       | `docker.io` qua apt, bật service, thêm user vào nhóm `docker` (đăng nhập lại sau đó)       |
+| Host             | kernel ≥ 5.8 và có BTF (`/sys/kernel/btf/vmlinux`) cho Falco `modern_ebpf`; inotify; RAM tổng/trống; dung lượng Docker root | Ghi sysctl inotify như Guide 1, Bước 0.3. Kernel/RAM/ổ đĩa phải xử lý tay                  |
+| Admin cluster    | context `kind-kind`, container `kind-control-plane`; CRD + controller CAPI, CAPD, CAAPH, cert-manager; ClusterResourceSet bật; ClusterClass `quick-start`; CronJob orchestrator; Loki `:31100`, DefectDojo `:31080` | Không tự cài: làm lại bước tương ứng ở Guide 1 (thông báo FAIL ghi rõ bước)                |
+
+Phiên bản có thể ghim qua biến môi trường: `KUBECTL_VERSION=v1.36.1 KIND_VERSION=v0.31.0 bash scripts/preflight.sh --install`. Tự cài chỉ hỗ trợ Ubuntu/Debian; distro khác cài tay các lệnh bị FAIL rồi chạy lại phần kiểm tra.
+
+Workload cluster cấp phát qua CAPD là container trên chính VM này, nên không cần cài gì vào workload: preflight đạt thì `make provision` + CAAPH/ClusterResourceSet lo phần còn lại, và `make verify` (mục 3) kiểm tra workload đã đủ tool.
 
 Script tự tính `ADMIN_NODE_IP` (từ container `kind-control-plane`) và `LOKI_URL`. Chỉ cần `.env` khi muốn ghi đè:
 
@@ -993,7 +1014,7 @@ jobs:
 
 1.  GitHub repo → **Settings → Actions → Runners → New self-hosted runner** → Linux x64. Làm theo các lệnh GitHub hiển thị (tải, `./config.sh --url ... --token ...`), khi được hỏi nhãn thì thêm `vdt-vm`.
 2.  Chạy runner dưới user `duong` (đã có kubeconfig admin và quyền docker), cài thành service: `sudo ./svc.sh install duong && sudo ./svc.sh start`.
-3.  Kiểm tra user runner có đủ: `kubectl config current-context` (kind-kind), `docker ps`, `clusterctl version`, `jq`, `make`.
+3.  Kiểm tra user runner có đủ: đăng nhập bằng user đó, chạy `bash scripts/preflight.sh` trong thư mục repo, phải ra 0 FAIL.
 4.  Bí mật: e2e và test không cần token. Nếu thêm bước `make scan` vào CI, lưu `DOJO_API_KEY` trong **Settings → Secrets → Actions** và truyền qua `env:`.
 
 ### 7.4 e2e: chứng minh "cấp phát là có bảo mật"
@@ -1013,9 +1034,11 @@ SHELL := /bin/bash
 CLUSTER ?= capi-quickstart
 NAME ?=
 
-.PHONY: help addons provision verify scan test-runtime test-policy test e2e lint
+.PHONY: help preflight addons provision verify scan test-runtime test-policy test e2e lint
 help: ## Liệt kê lệnh
 > @grep -E '^[a-z0-9-]+:.*## ' Makefile | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
+preflight: ## Kiểm tra lệnh/host/admin cluster (cài thiếu: bash scripts/preflight.sh --install)
+> ./scripts/preflight.sh
 addons: ## Nạp ConfigMap + apply HelmChartProxy/ClusterResourceSet lên admin
 > ./scripts/render.sh
 provision: ## Cấp phát workload mới: make provision NAME=team-a
@@ -1055,6 +1078,187 @@ lint: ## shellcheck + yamllint (cần cài sẵn)
 ---
 
 ## 9. Mã nguồn còn lại
+
+`scripts/preflight.sh`
+
+```bash
+#!/usr/bin/env bash
+# preflight.sh [--install]: kiểm tra VM + admin cluster trước khi chạy Guide 2.
+#   (không tham số)  chỉ kiểm tra, in OK/WARN/FAIL, exit 1 nếu có FAIL
+#   --install        cài các gói/binary còn thiếu trên VM (apt + /usr/local/bin) rồi kiểm tra lại
+# Không cần make: chạy được ngay sau git clone (bash scripts/preflight.sh).
+# Phần admin cluster (CAPI/CAPD/CAAPH, DefectDojo, Loki...) chỉ kiểm tra, cài theo Guide 1.
+# shellcheck disable=SC1091,SC2015
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
+: "${CLUSTER_NS:=default}"
+: "${ADMIN_CONTAINER:=kind-control-plane}"
+: "${CLUSTERCTL_VERSION:=v1.14.0}"     # cùng bản với Guide 1, Bước 1
+: "${KIND_VERSION:=latest}"            # hoặc ghim, ví dụ v0.31.0
+: "${KUBECTL_VERSION:=}"               # rỗng = bản stable mới nhất
+
+USER="${USER:-$(id -un)}"
+INSTALL=0
+[ "${1:-}" = "--install" ] && INSTALL=1
+
+ok=0; warns=0; fails=0
+pass() { printf '  \033[1;32m[OK]\033[0m   %s\n' "$*"; ok=$((ok + 1)); }
+warn() { printf '  \033[1;33m[WARN]\033[0m %s\n' "$*"; warns=$((warns + 1)); }
+fail() { printf '  \033[1;31m[FAIL]\033[0m %s\n' "$*"; fails=$((fails + 1)); }
+step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
+has()  { command -v "$1" >/dev/null 2>&1; }
+
+case "$(uname -m)" in
+  x86_64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  *) ARCH="$(uname -m)" ;;
+esac
+
+# ---------- cài đặt (chỉ khi --install)
+install_bin() { # install_bin <tên> <url>
+  local tmp; tmp="$(mktemp)"
+  curl -fsSL "$2" -o "$tmp" && sudo install -m 0755 "$tmp" "/usr/local/bin/$1"
+  rm -f "$tmp"
+}
+
+do_install() {
+  step "Cài gói còn thiếu"
+  has apt-get || { fail "chỉ hỗ trợ tự cài trên Ubuntu/Debian (apt); distro khác cài tay các lệnh bên dưới"; return; }
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip >/dev/null \
+    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip"
+
+  if ! has docker; then
+    sudo apt-get install -y -qq docker.io >/dev/null && pass "apt: docker.io"
+  fi
+  if has docker && ! docker info >/dev/null 2>&1; then
+    sudo systemctl enable --now docker >/dev/null 2>&1 || true
+    if ! id -nG "$USER" | grep -qw docker; then
+      sudo usermod -aG docker "$USER"
+      warn "đã thêm $USER vào nhóm docker: đăng xuất/đăng nhập lại (hoặc 'newgrp docker') rồi chạy lại preflight"
+    fi
+  fi
+
+  if ! has kubectl; then
+    local v="${KUBECTL_VERSION:-$(curl -fsSL https://dl.k8s.io/release/stable.txt)}"
+    install_bin kubectl "https://dl.k8s.io/release/${v}/bin/linux/${ARCH}/kubectl" && pass "kubectl ${v}"
+  fi
+  if ! has kind; then
+    if [ "$KIND_VERSION" = latest ]; then
+      install_bin kind "https://github.com/kubernetes-sigs/kind/releases/latest/download/kind-linux-${ARCH}"
+    else
+      install_bin kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${ARCH}"
+    fi
+    has kind && pass "kind $(kind version 2>/dev/null | awk '{print $2}')"
+  fi
+  if ! has helm; then
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null \
+      && pass "helm"
+  fi
+  if ! has clusterctl; then
+    install_bin clusterctl \
+      "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CLUSTERCTL_VERSION}/clusterctl-linux-${ARCH}" \
+      && pass "clusterctl ${CLUSTERCTL_VERSION}"
+  fi
+
+  local w i
+  w="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
+  i="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
+  if [ "$w" -lt 524288 ] || [ "$i" -lt 512 ]; then
+    printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\n' \
+      | sudo tee /etc/sysctl.d/99-kind.conf >/dev/null
+    sudo sysctl --system >/dev/null && pass "sysctl inotify (giống Guide 1, Bước 0.3)"
+  fi
+  chmod +x "$ROOT"/scripts/*.sh "$ROOT"/workload/scan/*.sh "$ROOT"/workload/tests/*.sh 2>/dev/null || true
+}
+
+[ "$INSTALL" = 1 ] && do_install
+
+# ---------- 1) Lệnh trên VM
+step "1. Lệnh cần có trên VM"
+for c in bash make git jq curl awk sed base64 tar docker kubectl kind helm clusterctl; do
+  if has "$c"; then pass "$c"; else fail "thiếu $c (chạy: bash scripts/preflight.sh --install)"; fi
+done
+if has make; then
+  mv="$(make --version | awk 'NR==1{print $3}')"
+  [ "$(printf '%s\n3.82\n' "$mv" | sort -V | head -1)" = 3.82 ] \
+    && pass "GNU make $mv (>= 3.82, cần cho .RECIPEPREFIX)" || fail "GNU make $mv < 3.82"
+fi
+for c in shellcheck yamllint; do
+  has "$c" && pass "$c (cho make lint)" || warn "thiếu $c: chỉ cần khi chạy 'make lint' (apt install $c)"
+done
+if has docker; then
+  docker info >/dev/null 2>&1 && pass "docker daemon chạy, user $USER dùng được không cần sudo" \
+    || fail "docker không dùng được với user $USER (daemon tắt hoặc chưa vào nhóm docker)"
+fi
+
+# ---------- 2) Host (kernel, tài nguyên)
+step "2. Host"
+kv="$(uname -r | cut -d- -f1)"
+[ "$(printf '%s\n5.8\n' "$kv" | sort -V | head -1)" = 5.8 ] \
+  && pass "kernel $kv (>= 5.8, cần cho Falco modern_ebpf)" || fail "kernel $kv < 5.8: Falco modern_ebpf không chạy"
+[ -r /sys/kernel/btf/vmlinux ] && pass "BTF có sẵn (/sys/kernel/btf/vmlinux)" \
+  || fail "thiếu /sys/kernel/btf/vmlinux: Falco modern_ebpf cần kernel bật CONFIG_DEBUG_INFO_BTF"
+w="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
+i="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
+{ [ "$w" -ge 524288 ] && [ "$i" -ge 512 ]; } && pass "inotify watches=$w instances=$i" \
+  || fail "inotify thấp (watches=$w instances=$i): Guide 1, Bước 0.3 hoặc --install"
+mem_kb="$(awk '/MemTotal/{print $2}' /proc/meminfo 2>/dev/null)"
+avail_kb="$(awk '/MemAvailable/{print $2}' /proc/meminfo 2>/dev/null)"
+mem_gb=$(( ${mem_kb:-0} / 1024 / 1024 )); avail_gb=$(( ${avail_kb:-0} / 1024 / 1024 ))
+[ "$mem_gb" -ge 15 ] && pass "RAM ${mem_gb} GB" || warn "RAM ${mem_gb} GB (< 16 GB khuyến nghị)"
+[ "$avail_gb" -ge 4 ] && pass "RAM trống ${avail_gb} GB (mỗi workload ~4 GB)" \
+  || warn "RAM trống ${avail_gb} GB: có thể không đủ cấp phát thêm workload"
+if has docker && docker info >/dev/null 2>&1; then
+  droot="$(docker info -f '{{.DockerRootDir}}')"
+  free_gb=$(( $(df -Pk "$droot" | awk 'NR==2{print $4}') / 1024 / 1024 ))
+  [ "$free_gb" -ge 30 ] && pass "Docker root $droot còn ${free_gb} GB" \
+    || warn "Docker root $droot chỉ còn ${free_gb} GB (mỗi workload thêm vài GB image)"
+fi
+
+# ---------- 3) Admin cluster (cài theo Guide 1)
+step "3. Admin cluster (Guide 1)"
+if ! has kubectl || ! kubectl version --request-timeout=5s >/dev/null 2>&1; then
+  fail "kubectl không kết nối được admin cluster: làm Guide 1, Bước 1 trước"
+else
+  ctx="$(kubectl config current-context 2>/dev/null)"
+  [ "$ctx" = kind-kind ] && pass "context $ctx" || warn "context hiện tại là '$ctx', mong đợi kind-kind"
+  has docker && docker inspect "$ADMIN_CONTAINER" >/dev/null 2>&1 \
+    && pass "container $ADMIN_CONTAINER (tính ADMIN_NODE_IP)" || fail "không thấy container $ADMIN_CONTAINER"
+
+  for crd in clusters.cluster.x-k8s.io dockerclusters.infrastructure.cluster.x-k8s.io \
+             helmchartproxies.addons.cluster.x-k8s.io clusterresourcesets.addons.cluster.x-k8s.io; do
+    kubectl get crd "$crd" >/dev/null 2>&1 && pass "CRD $crd" || fail "thiếu CRD $crd (Guide 1, Bước 1)"
+  done
+  for d in capi-system/capi-controller-manager capd-system/capd-controller-manager \
+           caaph-system/caaph-controller-manager cert-manager/cert-manager; do
+    avail="$(kubectl -n "${d%%/*}" get deploy "${d#*/}" -o jsonpath='{.status.availableReplicas}' 2>/dev/null)"
+    [ "${avail:-0}" -ge 1 ] && pass "deploy $d Available" || fail "deploy $d chưa Available"
+  done
+  kubectl -n capi-system get deploy capi-controller-manager -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null \
+    | grep -q 'ClusterResourceSet=false' && fail "feature gate ClusterResourceSet=false (Guide 1, Bước 1)" \
+    || pass "ClusterResourceSet bật"
+  kubectl -n "$CLUSTER_NS" get clusterclass quick-start >/dev/null 2>&1 \
+    && pass "ClusterClass $CLUSTER_NS/quick-start (cần cho --flavor development)" \
+    || fail "thiếu ClusterClass quick-start: kubectl apply -f 02-workload-cluster/clusterclass-quick-start.yaml"
+
+  kubectl -n scan-orchestrator get cronjob scan-orchestrator >/dev/null 2>&1 \
+    && pass "CronJob scan-orchestrator" || warn "chưa có CronJob scan-orchestrator (Guide 1, Bước 6)"
+  ip=""
+  has docker && ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$ADMIN_CONTAINER" 2>/dev/null)"
+  if [ -n "$ip" ]; then
+    curl -fsS -m 5 "http://$ip:31100/loki/api/v1/labels" >/dev/null 2>&1 && pass "Loki http://$ip:31100" \
+      || fail "Loki http://$ip:31100 không phản hồi (Guide 1, Bước 3)"
+    curl -sS -m 5 -o /dev/null "http://$ip:31080/" 2>/dev/null && pass "DefectDojo http://$ip:31080" \
+      || warn "DefectDojo http://$ip:31080 không phản hồi (Guide 1, Bước 2; chỉ cần cho scan)"
+  fi
+fi
+
+printf '\nKết quả: %d OK, %d WARN, %d FAIL\n' "$ok" "$warns" "$fails"
+[ "$fails" -eq 0 ]
+```
 
 `scripts/lib.sh`
 

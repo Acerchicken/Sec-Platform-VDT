@@ -4,9 +4,11 @@ SHELL := /bin/bash
 CLUSTER ?= capi-quickstart
 NAME ?=
 
-.PHONY: help addons provision verify scan test-runtime test-policy test e2e lint
+.PHONY: help preflight addons provision verify scan test-runtime test-policy test e2e lint
 help: ## Liệt kê lệnh
 > @grep -E '^[a-z0-9-]+:.*## ' Makefile | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
+preflight: ## Kiểm tra lệnh/host/admin cluster (cài thiếu: bash scripts/preflight.sh --install)
+> ./scripts/preflight.sh
 addons: ## Nạp ConfigMap + apply HelmChartProxy/ClusterResourceSet lên admin
 > ./scripts/render.sh
 provision: ## Cấp phát workload mới: make provision NAME=team-a
