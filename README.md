@@ -14,8 +14,8 @@ workload/addons/                             Admin: HelmChartProxy (Falco, Talon
 workload/manifests/                          Applied to workloads by CRS: namespaces, Kyverno policies, quarantine NetworkPolicy, lab target
 workload/scan/                               run-scans.sh + Job templates (loaded into the scan-scripts ConfigMap)
 workload/tests/                              verify, RT-1..3, PE-1..5, e2e, fixtures
-scripts/                                     lib.sh, render.sh, provision-cluster.sh, scan-now.sh
-Makefile, env.sh, env.example                Entry points: make addons | provision | verify | scan | test | e2e
+scripts/                                     install-deps.sh, preflight.sh, lib.sh, render.sh, provision-cluster.sh, scan-now.sh
+Makefile, env.sh, env.example                Entry points: make deps | preflight | addons | provision | verify | scan | test | e2e
 .github/workflows/baseline.yml               CI (lint on GitHub; apply/test/e2e on the self-hosted runner vdt-vm)
 docs/                                        Guide 1/2 (Admin) and Guide 2/2 (Workload), in Vietnamese
 ```
@@ -25,8 +25,19 @@ Labels on the `Cluster` object: `security-baseline=enabled` (security tools), `l
 
 ## Prerequisites
 
-Step 0 of Guide 1 is done (SSD, Docker data-root, inotify) and `docker kubectl kind helm clusterctl jq make` are installed.
-All commands run on the VM, from the repo root, with kubectl pointing at the admin cluster (`kind-kind`). After cloning: `chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh`.
+An Ubuntu/Debian VM with sudo. On a clean VM, `scripts/install-deps.sh` installs everything both guides need
+(`git make jq curl gettext-base rsync`, Docker + compose plugin, `kubectl kind helm clusterctl`, inotify sysctl); see Guide 1, Step 0:
+
+```bash
+sudo apt-get update && sudo apt-get install -y git
+mkdir -p ~/vdt && cd ~/vdt && git clone https://github.com/Acerchicken/Sec-Platform-VDT.git && cd Sec-Platform-VDT
+# mount the SSD at /mnt/ssd first (Guide 1, Step 0.2), then:
+DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh   # re-login afterwards for the docker group
+bash scripts/install-deps.sh                                    # re-run: must end with 0 FAIL
+```
+
+After Guide 1, `bash scripts/preflight.sh` (or `make preflight`) checks the VM and the admin cluster before Guide 2; `--install` runs `install-deps.sh` first.
+All commands run on the VM, from the repo root, with kubectl pointing at the admin cluster (`kind-kind`).
 
 ## Deployment order
 

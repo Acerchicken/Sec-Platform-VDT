@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # preflight.sh [--install]: kiểm tra VM + admin cluster trước khi chạy Guide 2.
 #   (không tham số)  chỉ kiểm tra, in OK/WARN/FAIL, exit 1 nếu có FAIL
-#   --install        cài các gói/binary còn thiếu trên VM (apt + /usr/local/bin) rồi kiểm tra lại
+#   --install        chạy scripts/install-deps.sh (cài gói/binary còn thiếu trên VM) rồi kiểm tra lại
 # Không cần make: chạy được ngay sau git clone (bash scripts/preflight.sh).
 # Phần admin cluster (CAPI/CAPD/CAAPH, DefectDojo, Loki...) chỉ kiểm tra, cài theo Guide 1.
 # shellcheck disable=SC1091,SC2015
@@ -11,9 +11,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
 : "${CLUSTER_NS:=default}"
 : "${ADMIN_CONTAINER:=kind-control-plane}"
-: "${CLUSTERCTL_VERSION:=v1.14.0}"     # cùng bản với Guide 1, Bước 1
-: "${KIND_VERSION:=latest}"            # hoặc ghim, ví dụ v0.31.0
-: "${KUBECTL_VERSION:=}"               # rỗng = bản stable mới nhất
 
 USER="${USER:-$(id -un)}"
 INSTALL=0
@@ -26,68 +23,10 @@ fail() { printf '  \033[1;31m[FAIL]\033[0m %s\n' "$*"; fails=$((fails + 1)); }
 step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 has()  { command -v "$1" >/dev/null 2>&1; }
 
-case "$(uname -m)" in
-  x86_64) ARCH=amd64 ;;
-  aarch64|arm64) ARCH=arm64 ;;
-  *) ARCH="$(uname -m)" ;;
-esac
-
-# ---------- cài đặt (chỉ khi --install)
-install_bin() { # install_bin <tên> <url>
-  local tmp; tmp="$(mktemp)"
-  curl -fsSL "$2" -o "$tmp" && sudo install -m 0755 "$tmp" "/usr/local/bin/$1"
-  rm -f "$tmp"
-}
-
+# ---------- cài đặt (chỉ khi --install): dùng chung script với Guide 1, Bước 0
 do_install() {
-  step "Cài gói còn thiếu"
-  has apt-get || { fail "chỉ hỗ trợ tự cài trên Ubuntu/Debian (apt); distro khác cài tay các lệnh bên dưới"; return; }
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base >/dev/null \
-    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base"
-
-  if ! has docker; then
-    sudo apt-get install -y -qq docker.io >/dev/null && pass "apt: docker.io"
-  fi
-  if has docker && ! docker info >/dev/null 2>&1; then
-    sudo systemctl enable --now docker >/dev/null 2>&1 || true
-    if ! id -nG "$USER" | grep -qw docker; then
-      sudo usermod -aG docker "$USER"
-      warn "đã thêm $USER vào nhóm docker: đăng xuất/đăng nhập lại (hoặc 'newgrp docker') rồi chạy lại preflight"
-    fi
-  fi
-
-  if ! has kubectl; then
-    local v="${KUBECTL_VERSION:-$(curl -fsSL https://dl.k8s.io/release/stable.txt)}"
-    install_bin kubectl "https://dl.k8s.io/release/${v}/bin/linux/${ARCH}/kubectl" && pass "kubectl ${v}"
-  fi
-  if ! has kind; then
-    if [ "$KIND_VERSION" = latest ]; then
-      install_bin kind "https://github.com/kubernetes-sigs/kind/releases/latest/download/kind-linux-${ARCH}"
-    else
-      install_bin kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${ARCH}"
-    fi
-    has kind && pass "kind $(kind version 2>/dev/null | awk '{print $2}')"
-  fi
-  if ! has helm; then
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null \
-      && pass "helm"
-  fi
-  if ! has clusterctl; then
-    install_bin clusterctl \
-      "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CLUSTERCTL_VERSION}/clusterctl-linux-${ARCH}" \
-      && pass "clusterctl ${CLUSTERCTL_VERSION}"
-  fi
-
-  local w i
-  w="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
-  i="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
-  if [ "$w" -lt 524288 ] || [ "$i" -lt 512 ]; then
-    printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\n' \
-      | sudo tee /etc/sysctl.d/99-kind.conf >/dev/null
-    sudo sysctl --system >/dev/null && pass "sysctl inotify (giống Guide 1, Bước 0.3)"
-  fi
-  chmod +x "$ROOT"/scripts/*.sh "$ROOT"/workload/scan/*.sh "$ROOT"/workload/tests/*.sh 2>/dev/null || true
+  step "Cài gói còn thiếu (scripts/install-deps.sh)"
+  bash "$ROOT/scripts/install-deps.sh" || warn "install-deps.sh báo lỗi, xem các dòng FAIL ở trên"
 }
 
 [ "$INSTALL" = 1 ] && do_install

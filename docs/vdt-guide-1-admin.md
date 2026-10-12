@@ -24,46 +24,71 @@ Quy ước: mọi lệnh chạy trên VM, thư mục `~/vdt`, `kubectl` mặc đ
 
 ---
 
-## Bước 0 – Chuẩn bị host (SSD + Docker + sysctl)
+## Bước 0 – Chuẩn bị host (repo, SSD, package, Docker, sysctl)
 
-Làm **trước khi tạo bất kỳ cụm nào**: toàn bộ node kind/CAPD, image và PVC đều nằm trong Docker data-root.
+Làm **trước khi tạo bất kỳ cụm nào**: toàn bộ node kind/CAPD, image và PVC đều nằm trong Docker data-root, nên Docker phải chạy trên SSD ngay từ đầu.
+
+**0.1 Lấy repo** (VM sạch chỉ cần `git` để clone; mọi package khác do script ở 0.3 cài)
 
 ```bash
-# 0.1 Format + mount SSD (kiểm tra kỹ tên thiết bị, mkfs XÓA sạch ổ)
+sudo apt-get update && sudo apt-get install -y git
+mkdir -p ~/vdt && cd ~/vdt
+git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
+```
+
+**0.2 Format + mount SSD** (kiểm tra kỹ tên thiết bị, `mkfs` XÓA sạch ổ)
+
+```bash
 lsblk -f                              # SSD chưa có FSTYPE/MOUNTPOINT, giả sử /dev/vdb
 sudo mkfs.ext4 -L ssd-data /dev/vdb
 sudo mkdir -p /mnt/ssd
 echo "UUID=$(sudo blkid -s UUID -o value /dev/vdb) /mnt/ssd ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
 sudo mount -a && df -h /mnt/ssd
+```
 
-# 0.2 Chuyển Docker data-root sang SSD
+**0.3 Cài package** bằng `scripts/install-deps.sh` (Ubuntu/Debian, cần sudo). Đặt `DOCKER_DATA_ROOT` để Docker cài xong là chạy thẳng trên SSD:
+
+```bash
+cd ~/vdt/Sec-Platform-VDT
+DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh
+# Script thêm user vào nhóm docker: đăng xuất rồi SSH lại (hoặc: newgrp docker), sau đó:
+docker info | grep "Docker Root Dir"                     # phải là /mnt/ssd/docker
+bash scripts/install-deps.sh                             # chạy lại: phải ra 0 FAIL
+```
+
+| Nhóm | Script cài / làm | Dùng ở |
+|---|---|---|
+| Gói apt | `git make jq curl ca-certificates gnupg coreutils gawk sed tar gzip gettext-base rsync util-linux e2fsprogs` | `envsubst` (gói `gettext-base`) cho values Grafana, `rsync` cho 0.4, `jq` cho API DefectDojo, `make` cho Guide 2 |
+| Docker | `docker.io` + plugin `docker compose`, bật service, thêm user vào nhóm `docker`; ghi `data-root` vào `/etc/docker/daemon.json` (merge, giữ key khác) khi có `DOCKER_DATA_ROOT` | kind, CAPD, `pg-target` |
+| Kubernetes CLI | `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` `v1.14.0` vào `/usr/local/bin` | Bước 1 trở đi |
+| sysctl | `fs.inotify.max_user_watches=524288`, `max_user_instances=512` vào `/etc/sysctl.d/99-kind.conf` | nhiều node kind/CAPD trên 1 host |
+| Tùy chọn | `WITH_LINT=1` thêm `shellcheck yamllint` | `make lint` |
+
+Script chạy lại bao nhiêu lần cũng được: phần đã có thì bỏ qua. Ghim phiên bản qua biến môi trường, ví dụ `KUBECTL_VERSION=v1.36.1 KIND_VERSION=v0.31.0 bash scripts/install-deps.sh`. Có `make` rồi thì dùng `make deps`. Distro không dùng apt: cài tay các lệnh trong bảng.
+
+**0.4 Chỉ khi Docker đã chạy từ trước, còn dữ liệu ở `/var/lib/docker`**: script không tự chuyển dữ liệu (báo WARN), làm tay:
+
+```bash
 sudo systemctl stop docker docker.socket
 sudo mkdir -p /mnt/ssd/docker
-sudo rsync -aHAX /var/lib/docker/ /mnt/ssd/docker/      # bỏ qua nếu Docker còn trống
-echo '{"data-root": "/mnt/ssd/docker"}' | sudo tee /etc/docker/daemon.json   # nếu đã có file thì merge key này
+sudo rsync -aHAX /var/lib/docker/ /mnt/ssd/docker/
+sudo jq '. + {"data-root": "/mnt/ssd/docker"}' /etc/docker/daemon.json 2>/dev/null > /tmp/daemon.json \
+  || echo '{"data-root": "/mnt/ssd/docker"}' > /tmp/daemon.json
+sudo mv /tmp/daemon.json /etc/docker/daemon.json
 sudo systemctl start docker
 docker info | grep "Docker Root Dir"                     # phải là /mnt/ssd/docker
 sudo mv /var/lib/docker /var/lib/docker.bak              # xóa hẳn sau khi chạy ổn
-
-# 0.3 Giới hạn inotify (nhiều node kind/CAPD trên 1 host)
-printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\n' | sudo tee /etc/sysctl.d/99-kind.conf
-sudo sysctl --system
 ```
 
 Ghi chú: ổ phải là ext4/xfs (overlay2 không chạy trên NTFS/exFAT); nếu Docker cài bằng snap thì đường dẫn cấu hình khác; sau khi chạy cụm, `du -sh /var/lib/docker /var/lib/containerd` không được tăng. Cần tối thiểu ~16 GB RAM (`free -h`): DefectDojo tự nó đã request ~5 GB.
-
-Cài `docker`, `kubectl`, `kind`, `helm`, `jq` theo trang chủ nếu chưa có.
 
 ---
 
 ## Bước 1 – Admin cluster (kind) + CAPI, CAAPH, ClusterResourceSet
 
 ```bash
-mkdir -p ~/vdt && cd ~/vdt
-
-curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/clusterctl-linux-amd64 -o clusterctl
-sudo install -o root -g root -m 0755 clusterctl /usr/local/bin/clusterctl
-clusterctl version
+cd ~/vdt
+clusterctl version          # v1.14.0, đã cài ở Bước 0.3
 
 cat > kind-config.yaml <<'EOF'
 kind: Cluster

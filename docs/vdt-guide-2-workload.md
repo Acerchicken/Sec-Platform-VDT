@@ -41,10 +41,11 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
 
     Sec-Platform-VDT/
-    ├── Makefile                         # make addons | provision | verify | scan | test-* | e2e
+    ├── Makefile                         # make deps | preflight | addons | provision | verify | scan | test-* | e2e
     ├── env.example                      # copy thành .env nếu cần ghi đè
     ├── scripts/
-    │   ├── preflight.sh                 # kiểm tra + cài phụ thuộc trên VM, kiểm tra admin cluster
+    │   ├── install-deps.sh              # cài package/binary trên VM (dùng chung với Guide 1, Bước 0.3)
+    │   ├── preflight.sh                 # kiểm tra VM + admin cluster (--install gọi install-deps.sh)
     │   ├── lib.sh                       # hàm dùng chung (kw, use_cluster, wait_for)
     │   ├── render.sh                    # nạp ConfigMap + apply HelmChartProxy/CRS lên admin
     │   ├── provision-cluster.sh         # cấp phát workload + gắn nhãn
@@ -56,8 +57,10 @@ Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https:/
     │   └── tests/                       # verify, runtime-tests, policy-tests, e2e, fixtures
     └── .github/workflows/baseline.yml   # CI
 
+Đã làm Guide 1, Bước 0.1 thì repo đã có ở `~/vdt/Sec-Platform-VDT`: chỉ cần `cd ~/vdt/Sec-Platform-VDT && git pull`. VM khác (chưa có repo):
+
 ```bash
-sudo apt-get update && sudo apt-get install -y git           # chỉ cần git để clone; phần còn lại do preflight cài
+sudo apt-get update && sudo apt-get install -y git           # chỉ cần git để clone; phần còn lại do install-deps.sh cài
 mkdir -p ~/vdt && cd ~/vdt
 git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
 cd Sec-Platform-VDT
@@ -66,10 +69,10 @@ chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi cl
 
 ### 1.1 Kiểm tra và cài phụ thuộc
 
-VM mới (hoặc vừa dựng lại) thường thiếu `make`, `jq`, `clusterctl`... `scripts/preflight.sh` chạy bằng `bash` nên dùng được cả khi chưa có `make`:
+VM mới (hoặc vừa dựng lại) thường thiếu `make`, `jq`, `clusterctl`... `scripts/preflight.sh` chạy bằng `bash` nên dùng được cả khi chưa có `make`. `--install` gọi `scripts/install-deps.sh`, cùng script đã dùng ở Guide 1, Bước 0.3, nên nếu đã làm Guide 1 thì thường chỉ cần chạy phần kiểm tra:
 
 ```bash
-bash scripts/preflight.sh --install  # cài phần còn thiếu trên VM (apt + /usr/local/bin, cần sudo), rồi kiểm tra
+bash scripts/preflight.sh --install  # = bash scripts/install-deps.sh rồi kiểm tra (apt + /usr/local/bin, cần sudo)
 bash scripts/preflight.sh            # chỉ kiểm tra; phải ra "0 FAIL" (WARN được phép)
 kubectl config current-context       # phải là kind-kind (admin)
 make help                            # từ giờ dùng được make; kiểm tra lại bất cứ lúc nào: make preflight
@@ -77,13 +80,13 @@ make help                            # từ giờ dùng được make; kiểm tr
 
 | Nhóm             | Kiểm tra                                                                                                    | `--install` tự xử lý                                                                       |
 |------------------|-------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| Lệnh trên VM     | `make` (GNU ≥ 3.82), `git`, `jq`, `curl`, `awk`, `sed`, `base64`, `tar`, `envsubst`, `md5sum`, `timeout`, `docker`, `kubectl`, `kind`, `helm`, `clusterctl`; `shellcheck`/`yamllint` (WARN, chỉ cho `make lint`) | Cài qua apt (`envsubst` từ gói `gettext-base`); `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` v1.14.0 vào `/usr/local/bin` |
-| Docker           | daemon chạy, user hiện tại dùng được không cần `sudo`                                                       | `docker.io` qua apt, bật service, thêm user vào nhóm `docker` (đăng nhập lại sau đó)       |
+| Lệnh trên VM     | `make` (GNU ≥ 3.82), `git`, `jq`, `curl`, `awk`, `sed`, `base64`, `tar`, `envsubst`, `md5sum`, `timeout`, `docker`, `kubectl`, `kind`, `helm`, `clusterctl`; `shellcheck`/`yamllint` (WARN, chỉ cho `make lint`) | `install-deps.sh`: cài qua apt (`envsubst` từ gói `gettext-base`); `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` v1.14.0 vào `/usr/local/bin` |
+| Docker           | daemon chạy, user hiện tại dùng được không cần `sudo`                                                       | `docker.io` + `docker compose` qua apt, bật service, thêm user vào nhóm `docker` (đăng nhập lại sau đó) |
 | Host             | kernel ≥ 5.8 và có BTF (`/sys/kernel/btf/vmlinux`) cho Falco `modern_ebpf`; inotify; RAM tổng/trống; dung lượng Docker root | Ghi sysctl inotify như Guide 1, Bước 0.3. Kernel/RAM/ổ đĩa phải xử lý tay                  |
 | Admin cluster    | context `kind-kind`, container `kind-control-plane`; CRD + controller CAPI, CAPD, CAAPH, cert-manager; ClusterResourceSet bật; ClusterClass `quick-start`; CronJob orchestrator; Loki `:31100`, DefectDojo `:31080` | Không tự cài: làm lại bước tương ứng ở Guide 1 (thông báo FAIL ghi rõ bước)                |
 | Mạng ra ngoài    | Kết nối tới Helm repo Falco (`falcosecurity.github.io/charts`), Kyverno (`kyverno.github.io/kyverno`), `raw.githubusercontent.com`, Docker Hub (`registry-1.docker.io`); không phản hồi (HTTP `000`) là FAIL | Không tự sửa: kiểm tra proxy/firewall/DNS của VM. CAAPH và node CAPD pull chart/image qua mạng này khi cấp phát |
 
-Phiên bản có thể ghim qua biến môi trường: `KUBECTL_VERSION=v1.36.1 KIND_VERSION=v0.31.0 bash scripts/preflight.sh --install`. Tự cài chỉ hỗ trợ Ubuntu/Debian; distro khác cài tay các lệnh bị FAIL rồi chạy lại phần kiểm tra.
+Phiên bản có thể ghim qua biến môi trường: `KUBECTL_VERSION=v1.36.1 KIND_VERSION=v0.31.0 bash scripts/preflight.sh --install` (biến được truyền xuống `install-deps.sh`). Tự cài chỉ hỗ trợ Ubuntu/Debian; distro khác cài tay các lệnh bị FAIL rồi chạy lại phần kiểm tra.
 
 Workload cluster cấp phát qua CAPD là container trên chính VM này, nên không cần cài gì vào workload: preflight đạt thì `make provision` + CAAPH/ClusterResourceSet lo phần còn lại, và `make verify` (mục 3) kiểm tra workload đã đủ tool.
 
@@ -1035,9 +1038,11 @@ SHELL := /bin/bash
 CLUSTER ?= capi-quickstart
 NAME ?=
 
-.PHONY: help preflight addons provision verify scan test-runtime test-policy test e2e lint
+.PHONY: help deps preflight addons provision verify scan test-runtime test-policy test e2e lint
 help: ## Liệt kê lệnh
 > @grep -E '^[a-z0-9-]+:.*## ' Makefile | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
+deps: ## Cài package/binary cần cho Guide 1 + 2 (= bash scripts/install-deps.sh)
+> ./scripts/install-deps.sh
 preflight: ## Kiểm tra lệnh/host/admin cluster (cài thiếu: bash scripts/preflight.sh --install)
 > ./scripts/preflight.sh
 addons: ## Nạp ConfigMap + apply HelmChartProxy/ClusterResourceSet lên admin
@@ -1080,29 +1085,26 @@ lint: ## shellcheck + yamllint (cần cài sẵn)
 
 ## 9. Mã nguồn còn lại
 
-`scripts/preflight.sh`
+`scripts/install-deps.sh`
 
 ```bash
 #!/usr/bin/env bash
-# preflight.sh [--install]: kiểm tra VM + admin cluster trước khi chạy Guide 2.
-#   (không tham số)  chỉ kiểm tra, in OK/WARN/FAIL, exit 1 nếu có FAIL
-#   --install        cài các gói/binary còn thiếu trên VM (apt + /usr/local/bin) rồi kiểm tra lại
-# Không cần make: chạy được ngay sau git clone (bash scripts/preflight.sh).
-# Phần admin cluster (CAPI/CAPD/CAAPH, DefectDojo, Loki...) chỉ kiểm tra, cài theo Guide 1.
-# shellcheck disable=SC1091,SC2015
+# install-deps.sh: cài mọi package/binary VM cần cho Guide 1 (admin) và Guide 2 (workload) trên Ubuntu/Debian.
+#   bash scripts/install-deps.sh                                   # cài phần còn thiếu, bỏ qua phần đã có
+#   DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh  # máy sạch: Docker chạy thẳng trên SSD (Guide 1, Bước 0)
+#   WITH_LINT=1 bash scripts/install-deps.sh                       # thêm shellcheck + yamllint (cho make lint)
+# Chạy lại bao nhiêu lần cũng được. Chỉ cài trên VM, không đụng tới cluster.
+# Kiểm tra đầy đủ (host + admin cluster) sau khi xong Guide 1: bash scripts/preflight.sh
+# shellcheck disable=SC2015
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
-: "${CLUSTER_NS:=default}"
-: "${ADMIN_CONTAINER:=kind-control-plane}"
 : "${CLUSTERCTL_VERSION:=v1.14.0}"     # cùng bản với Guide 1, Bước 1
 : "${KIND_VERSION:=latest}"            # hoặc ghim, ví dụ v0.31.0
 : "${KUBECTL_VERSION:=}"               # rỗng = bản stable mới nhất
-
+: "${DOCKER_DATA_ROOT:=}"              # rỗng = giữ mặc định /var/lib/docker
+: "${WITH_LINT:=0}"
 USER="${USER:-$(id -un)}"
-INSTALL=0
-[ "${1:-}" = "--install" ] && INSTALL=1
 
 ok=0; warns=0; fails=0
 pass() { printf '  \033[1;32m[OK]\033[0m   %s\n' "$*"; ok=$((ok + 1)); }
@@ -1117,62 +1119,135 @@ case "$(uname -m)" in
   *) ARCH="$(uname -m)" ;;
 esac
 
-# ---------- cài đặt (chỉ khi --install)
 install_bin() { # install_bin <tên> <url>
   local tmp; tmp="$(mktemp)"
   curl -fsSL "$2" -o "$tmp" && sudo install -m 0755 "$tmp" "/usr/local/bin/$1"
-  rm -f "$tmp"
+  local rc=$?; rm -f "$tmp"; return "$rc"
 }
 
-do_install() {
-  step "Cài gói còn thiếu"
-  has apt-get || { fail "chỉ hỗ trợ tự cài trên Ubuntu/Debian (apt); distro khác cài tay các lệnh bên dưới"; return; }
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base >/dev/null \
-    && pass "apt: make git jq curl ca-certificates coreutils gawk sed tar gzip gettext-base"
+has apt-get || { echo "Chỉ hỗ trợ Ubuntu/Debian (apt). Distro khác: cài tay các lệnh ở bảng trong Guide 1, Bước 0."; exit 1; }
 
-  if ! has docker; then
-    sudo apt-get install -y -qq docker.io >/dev/null && pass "apt: docker.io"
-  fi
-  if has docker && ! docker info >/dev/null 2>&1; then
-    sudo systemctl enable --now docker >/dev/null 2>&1 || true
-    if ! id -nG "$USER" | grep -qw docker; then
-      sudo usermod -aG docker "$USER"
-      warn "đã thêm $USER vào nhóm docker: đăng xuất/đăng nhập lại (hoặc 'newgrp docker') rồi chạy lại preflight"
-    fi
-  fi
+# ---------- 1) Gói hệ thống
+step "1. Gói hệ thống (apt)"
+PKGS=(git make jq curl ca-certificates gnupg coreutils gawk sed tar gzip gettext-base rsync util-linux e2fsprogs)
+[ "$WITH_LINT" = 1 ] && PKGS+=(shellcheck yamllint)
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${PKGS[@]}" >/dev/null \
+  && pass "apt: ${PKGS[*]}" || fail "apt-get install lỗi (xem lại mạng/apt source)"
 
-  if ! has kubectl; then
-    local v="${KUBECTL_VERSION:-$(curl -fsSL https://dl.k8s.io/release/stable.txt)}"
-    install_bin kubectl "https://dl.k8s.io/release/${v}/bin/linux/${ARCH}/kubectl" && pass "kubectl ${v}"
-  fi
-  if ! has kind; then
-    if [ "$KIND_VERSION" = latest ]; then
-      install_bin kind "https://github.com/kubernetes-sigs/kind/releases/latest/download/kind-linux-${ARCH}"
+# ---------- 2) Docker Engine + compose plugin
+step "2. Docker"
+if [ -n "$DOCKER_DATA_ROOT" ]; then
+  sudo mkdir -p "$DOCKER_DATA_ROOT" /etc/docker
+  cur="$( [ -s /etc/docker/daemon.json ] && sudo cat /etc/docker/daemon.json || echo '{}')"
+  want="$(printf '%s' "$cur" | jq --arg r "$DOCKER_DATA_ROOT" '. + {"data-root": $r}' 2>/dev/null)"
+  if [ -z "$want" ]; then
+    fail "/etc/docker/daemon.json không phải JSON hợp lệ: sửa tay rồi chạy lại"
+  elif [ "$(printf '%s' "$cur" | jq -r '."data-root" // empty')" != "$DOCKER_DATA_ROOT" ]; then
+    if has docker && [ -n "$(sudo ls -A /var/lib/docker 2>/dev/null)" ] && [ "$DOCKER_DATA_ROOT" != /var/lib/docker ]; then
+      warn "Docker đã có dữ liệu ở /var/lib/docker: không tự đổi data-root, làm tay theo Guide 1, Bước 0.4 (rsync rồi đổi daemon.json)"
     else
-      install_bin kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${ARCH}"
+      printf '%s\n' "$want" | sudo tee /etc/docker/daemon.json >/dev/null && pass "daemon.json: data-root=$DOCKER_DATA_ROOT (merge, giữ key khác)"
+      has docker && sudo systemctl restart docker
     fi
-    has kind && pass "kind $(kind version 2>/dev/null | awk '{print $2}')"
   fi
-  if ! has helm; then
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null \
-      && pass "helm"
+fi
+if ! has docker; then
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null && pass "apt: docker.io" || fail "không cài được docker.io"
+fi
+if has docker && ! docker compose version >/dev/null 2>&1; then
+  { sudo apt-get install -y -qq docker-compose-v2 >/dev/null 2>&1 || sudo apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1; } \
+    && pass "docker compose plugin" || warn "không cài được docker compose plugin (chỉ cần nếu dùng 04-pg-target/compose.yaml; 'docker run' trong Guide 1 vẫn chạy)"
+fi
+if has docker; then
+  sudo systemctl enable --now docker >/dev/null 2>&1 || true
+  if ! id -nG "$USER" | grep -qw docker; then
+    sudo usermod -aG docker "$USER" && warn "đã thêm $USER vào nhóm docker: đăng xuất rồi SSH lại (hoặc 'newgrp docker') trước khi chạy tiếp"
   fi
-  if ! has clusterctl; then
-    install_bin clusterctl \
-      "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CLUSTERCTL_VERSION}/clusterctl-linux-${ARCH}" \
-      && pass "clusterctl ${CLUSTERCTL_VERSION}"
-  fi
+fi
 
-  local w i
-  w="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
-  i="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
-  if [ "$w" -lt 524288 ] || [ "$i" -lt 512 ]; then
-    printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\n' \
-      | sudo tee /etc/sysctl.d/99-kind.conf >/dev/null
-    sudo sysctl --system >/dev/null && pass "sysctl inotify (giống Guide 1, Bước 0.3)"
-  fi
-  chmod +x "$ROOT"/scripts/*.sh "$ROOT"/workload/scan/*.sh "$ROOT"/workload/tests/*.sh 2>/dev/null || true
+# ---------- 3) Kubernetes CLI (/usr/local/bin)
+step "3. kubectl, kind, helm, clusterctl"
+if ! has kubectl; then
+  v="${KUBECTL_VERSION:-$(curl -fsSL https://dl.k8s.io/release/stable.txt)}"
+  install_bin kubectl "https://dl.k8s.io/release/${v}/bin/linux/${ARCH}/kubectl" && pass "cài kubectl ${v}" || fail "không tải được kubectl"
+fi
+if ! has kind; then
+  if [ "$KIND_VERSION" = latest ]; then u="https://github.com/kubernetes-sigs/kind/releases/latest/download/kind-linux-${ARCH}"
+  else u="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${ARCH}"; fi
+  install_bin kind "$u" && pass "cài kind" || fail "không tải được kind"
+fi
+if ! has helm; then
+  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null && pass "cài helm" || fail "không cài được helm"
+fi
+if ! has clusterctl; then
+  install_bin clusterctl "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CLUSTERCTL_VERSION}/clusterctl-linux-${ARCH}" \
+    && pass "cài clusterctl ${CLUSTERCTL_VERSION}" || fail "không tải được clusterctl"
+fi
+
+# ---------- 4) sysctl inotify (Guide 1, Bước 0)
+step "4. sysctl inotify"
+w="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
+i="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
+if [ "$w" -lt 524288 ] || [ "$i" -lt 512 ]; then
+  printf 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512\n' | sudo tee /etc/sysctl.d/99-kind.conf >/dev/null
+  sudo sysctl --system >/dev/null && pass "ghi /etc/sysctl.d/99-kind.conf" || fail "không áp được sysctl"
+else
+  pass "inotify watches=$w instances=$i"
+fi
+chmod +x "$ROOT"/scripts/*.sh "$ROOT"/workload/scan/*.sh "$ROOT"/workload/tests/*.sh 2>/dev/null || true
+
+# ---------- 5) Kết quả
+step "5. Kiểm tra sau khi cài"
+for c in git make jq curl envsubst rsync docker kubectl kind helm clusterctl; do
+  has "$c" && pass "$c" || fail "vẫn thiếu $c"
+done
+has docker && docker compose version >/dev/null 2>&1 && pass "docker compose" || true
+has kubectl    && pass "kubectl $(kubectl version --client -o json 2>/dev/null | jq -r .clientVersion.gitVersion)"
+has kind       && pass "$(kind version 2>/dev/null)"
+has helm       && pass "helm $(helm version --short 2>/dev/null)"
+has clusterctl && pass "clusterctl $(clusterctl version -o short 2>/dev/null)"
+if has docker; then
+  if docker info >/dev/null 2>&1; then pass "Docker Root Dir: $(docker info -f '{{.DockerRootDir}}')"
+  else warn "user $USER chưa gọi được docker không cần sudo: đăng xuất/SSH lại rồi chạy 'docker info'"; fi
+fi
+
+printf '\nKết quả: %d OK, %d WARN, %d FAIL\n' "$ok" "$warns" "$fails"
+[ "$fails" -eq 0 ]
+```
+
+`scripts/preflight.sh`
+
+```bash
+#!/usr/bin/env bash
+# preflight.sh [--install]: kiểm tra VM + admin cluster trước khi chạy Guide 2.
+#   (không tham số)  chỉ kiểm tra, in OK/WARN/FAIL, exit 1 nếu có FAIL
+#   --install        chạy scripts/install-deps.sh (cài gói/binary còn thiếu trên VM) rồi kiểm tra lại
+# Không cần make: chạy được ngay sau git clone (bash scripts/preflight.sh).
+# Phần admin cluster (CAPI/CAPD/CAAPH, DefectDojo, Loki...) chỉ kiểm tra, cài theo Guide 1.
+# shellcheck disable=SC1091,SC2015
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
+: "${CLUSTER_NS:=default}"
+: "${ADMIN_CONTAINER:=kind-control-plane}"
+
+USER="${USER:-$(id -un)}"
+INSTALL=0
+[ "${1:-}" = "--install" ] && INSTALL=1
+
+ok=0; warns=0; fails=0
+pass() { printf '  \033[1;32m[OK]\033[0m   %s\n' "$*"; ok=$((ok + 1)); }
+warn() { printf '  \033[1;33m[WARN]\033[0m %s\n' "$*"; warns=$((warns + 1)); }
+fail() { printf '  \033[1;31m[FAIL]\033[0m %s\n' "$*"; fails=$((fails + 1)); }
+step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
+has()  { command -v "$1" >/dev/null 2>&1; }
+
+# ---------- cài đặt (chỉ khi --install): dùng chung script với Guide 1, Bước 0
+do_install() {
+  step "Cài gói còn thiếu (scripts/install-deps.sh)"
+  bash "$ROOT/scripts/install-deps.sh" || warn "install-deps.sh báo lỗi, xem các dòng FAIL ở trên"
 }
 
 [ "$INSTALL" = 1 ] && do_install
