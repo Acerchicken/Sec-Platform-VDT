@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" role="img" aria-label="Sơ đồ lab VDT: laptop, GitHub Actions; VM Ubuntu chạy admin cluster kind (CAPI, CAPD, cert-manager, CAAPH, ClusterResourceSet, scan orchestrator, DefectDojo, Loki, Grafana) và workload cluster capi-quickstart (Calico, Kyverno, Trivy, kube-bench, Falco, Falcosidekick, Falco-Talon).">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760" role="img" aria-label="Sơ đồ lab VDT: laptop, GitHub Actions; VM Ubuntu chạy admin cluster kind (CAPI, CAPD, cert-manager, CAAPH, ClusterResourceSet, scan orchestrator, DefectDojo, Loki, Grafana) và workload cluster capi-quickstart (Calico, Kyverno, Trivy, kube-bench, Falco, Falcosidekick, Falco-Talon).">
   <style>
 svg {
   --bg: #f6f7f9; --fg: #1b2230; --muted: #5a6577; --line: #b9c1cd; --panel: #ffffff;
@@ -44,7 +44,7 @@ text { fill: var(--fg); font-size: 12px; }
 .c { font-size: 13px; font-weight: 500; text-anchor: middle; }
 .lb { fill: var(--muted); font-size: 12px; }
 </style>
-  <rect class="bg" x="0" y="0" width="1200" height="690"/>
+  <rect class="bg" x="0" y="0" width="1200" height="760"/>
   <defs>
     <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-g" d="M0 0L10 5L0 10z"/></marker>
     <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-p" d="M0 0L10 5L0 10z"/></marker>
@@ -54,12 +54,12 @@ text { fill: var(--fg); font-size: 12px; }
   <rect class="bx" x="10" y="10" width="180" height="44" rx="4"/><text class="c" x="100" y="36.5">Laptop</text>
   <rect class="bx" x="1010" y="10" width="180" height="44" rx="4"/><text class="c" x="1100" y="36.5">GitHub Actions</text>
 
-  <rect class="vm" x="10" y="80" width="1180" height="600" rx="6"/>
+  <rect class="vm" x="10" y="80" width="1180" height="670" rx="6"/>
   <text class="h" x="26" y="104">VM Ubuntu · Docker</text>
   <rect class="bx" x="40" y="114" width="1120" height="40" rx="4"/>
   <text class="mono" x="600" y="138" text-anchor="middle">docker · kind · kubectl · helm · clusterctl · make · kyverno CLI</text>
 
-  <rect class="fa" x="40" y="180" width="520" height="474" rx="6"/>
+  <rect class="fa" x="40" y="180" width="520" height="544" rx="6"/>
   <text class="h" x="60" y="206">Admin cluster · kind</text>
   <rect class="bx" x="60" y="220" width="480" height="110" rx="4"/>
   <rect class="chip" x="76" y="234" width="140" height="34" rx="4"/><text class="c" x="146" y="255.5">CAPI</text><rect class="chip" x="230" y="234" width="140" height="34" rx="4"/><text class="c" x="300" y="255.5">CAPD</text><rect class="chip" x="384" y="234" width="140" height="34" rx="4"/><text class="c" x="454" y="255.5">cert-manager</text>
@@ -69,7 +69,7 @@ text { fill: var(--fg); font-size: 12px; }
   <rect class="bx-r" x="300" y="502" width="240" height="56" rx="4"/><text class="c" x="420" y="534.5">Loki</text>
   <rect class="bx" x="60" y="578" width="480" height="56" rx="4"/><text class="c" x="300" y="610.5">Grafana</text>
 
-  <rect class="fw" x="640" y="180" width="520" height="474" rx="6"/>
+  <rect class="fw" x="640" y="180" width="520" height="544" rx="6"/>
   <text class="h" x="660" y="206">Workload · capi-quickstart</text>
   <rect class="chip" x="1070" y="188" width="74" height="28" rx="4"/><text class="c" x="1107" y="206.5">Calico</text>
   <rect class="bx-p" x="660" y="220" width="230" height="90" rx="4"/>
@@ -93,6 +93,8 @@ text { fill: var(--fg); font-size: 12px; }
   <rect class="bx" x="1000" y="574" width="140" height="60" rx="4"/>
   <text class="c" x="1070" y="608">ns default</text>
 
+  <rect class="bx" x="660" y="664" width="480" height="40" rx="4"/><text class="c" x="900" y="688.5">Node worker</text>
+
   <path class="a a-g a-d" d="M25 54 V454 H58" marker-end="url(#ag)"/>
   <path class="a a-g a-d" d="M25 454 V606 H58" marker-end="url(#ag)"/>
   <path class="a a-g" d="M500 154 V218" marker-end="url(#ag)"/>
@@ -108,4 +110,7 @@ text { fill: var(--fg); font-size: 12px; }
   <path class="a a-r" d="M950 548 V572" marker-end="url(#ar)"/>
   <path class="a a-g a-d" d="M420 578 V560" marker-end="url(#ag)"/>
   <path class="a a-g a-d" d="M150 578 V484" marker-end="url(#ag)"/>
+  <path class="a a-s" d="M930 346 V312" marker-end="url(#as)"/>
+  <path class="a a-s" d="M898 380 V572" marker-end="url(#as)"/>
+  <path class="a a-s" d="M1124 363 H1150 V684 H1142" marker-end="url(#as)"/>
 </svg>
