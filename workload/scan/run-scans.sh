@@ -38,12 +38,17 @@ run_job() { # run_job <template>: tạo Job, chờ xong, in JSON kết quả ra 
   K -n "$NS" logs "job/$JOB" | sed -n '/^{/,$p'
 }
 
-reimport() { # reimport <scan_type> <file> <test_title>
-  curl -sS -f -X POST "$DOJO_URL/api/v2/reimport-scan/" -H "Authorization: Token $DOJO_API_KEY" \
+reimport() { # reimport <scan_type> <file> <test_title>: lỗi thì in body DefectDojo ra stderr
+  local code
+  jq -e . "$2" >/dev/null 2>&1 || {
+    echo "[$CLUSTER] $3 -> bỏ qua: kết quả không phải JSON hợp lệ ($(head -c 200 "$2" | tr '\n' ' '))" >&2; return 1; }
+  code="$(curl -sS -X POST "$DOJO_URL/api/v2/reimport-scan/" -H "Authorization: Token $DOJO_API_KEY" \
     -F "scan_type=$1" -F "file=@$2" -F "test_title=$3" \
     -F "product_type_name=Tenant-POC" -F "product_name=$CLUSTER" -F "engagement_name=Scheduled Scan" \
     -F "auto_create_context=true" -F "close_old_findings=true" \
-    -o /dev/null -w "[$CLUSTER] $3 -> HTTP %{http_code}\n"
+    -o "$OUT/resp.txt" -w '%{http_code}')" || return 1
+  echo "[$CLUSTER] $3 -> HTTP $code"
+  case "$code" in 2??) ;; *) echo "  $(head -c 500 "$OUT/resp.txt")" >&2; return 1 ;; esac
 }
 
 K get ns "$NS" >/dev/null || { echo "thiếu namespace $NS (ClusterResourceSet chưa apply?)" >&2; exit 1; }
@@ -63,6 +68,6 @@ IMAGE=""
 # 2) CIS benchmark: kube-bench trên node worker
 JOB=kube-bench
 if run_job kube-bench-job.yaml.tpl > "$OUT/kube-bench.json"; then
-  reimport "kube-bench Scanner" "$OUT/kube-bench.json" "kube-bench - $CLUSTER" || rc=1
+  reimport "kube-bench Scan" "$OUT/kube-bench.json" "kube-bench - $CLUSTER" || rc=1
 else rc=1; fi
 exit "$rc"
