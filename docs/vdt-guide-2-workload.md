@@ -12,7 +12,6 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 |------------------------------|---------------------------------------------------------------------|----------------------------------|-----------------------------------|-------------------------------------|
 | Image & Static analysis      | Trivy `image` (vuln + secret); Trivy `config` cho manifest trong CI | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator (admin)        |
 | Cấu hình cụm theo CIS        | kube-bench `--targets node`                                         | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator                |
-| Cấu hình DB (tùy chọn)       | Job psql kiểm tra SSL, mã hoá mật khẩu, version                     | Job ở `security-scan`            | DefectDojo                        | Chỉ chạy khi đặt `PG_TARGET_IP`     |
 | Sec runtime                  | Falco + Falcosidekick + Falco-Talon                                 | DaemonSet + Deployment ở `falco` | Loki/Grafana + phản ứng tự động   | HelmChartProxy (CAAPH)              |
 | **Policy enforcement (mới)** | Kyverno + 3 ValidatingPolicy (CEL)                                  | Admission webhook ở `kyverno`    | Chặn ngay khi apply, PolicyReport | HelmChartProxy + ClusterResourceSet |
 
@@ -104,7 +103,6 @@ ADMIN_CONTAINER=kind-control-plane
 # LOKI_URL=http://172.18.0.2:31100
 # DOJO_URL=http://172.18.0.2:31080
 # DOJO_API_KEY=
-# PG_TARGET_PASSWORD=poc-weak-pass
 ```
 
 ---
@@ -430,7 +428,7 @@ make verify CLUSTER=capi-quickstart
 
 ---
 
-## 4. Giải pháp 1–2: Image & Static analysis, CIS benchmark (+ DB tùy chọn)
+## 4. Giải pháp 1–2: Image & Static analysis, CIS benchmark
 
 Orchestrator ở admin gọi `run-scans.sh` cho từng cluster có nhãn. Script tạo Job trong namespace `security-scan` của workload, đọc kết quả JSON từ log rồi `reimport-scan` vào DefectDojo. Mỗi cluster là một Product, lần reimport sau tự đóng finding đã hết (`close_old_findings`).
 
@@ -438,7 +436,6 @@ Orchestrator ở admin gọi `run-scans.sh` cho từng cluster có nhãn. Script
 |---------------------------------------------------------------------|------------------------------------------------------|-------------------------|
 | `trivy-<hash>` (mỗi image đang chạy trong `vuln-lab`, `policy-lab`) | `trivy image --scanners vuln,secret`                 | Trivy Scan              |
 | `kube-bench`                                                        | `kube-bench run --targets node --json`               | kube-bench Scanner      |
-| `db-scan` (tùy chọn, khi có `PG_TARGET_IP`)                         | psql: `ssl`, `password_encryption`, `server_version` | Generic Findings Import |
 
 Chạy ngay, không chờ lịch:
 
@@ -452,7 +449,7 @@ kubectl -n scan-orchestrator create job --from=cronjob/scan-orchestrator scan-no
 kubectl -n scan-orchestrator logs -f job/$(kubectl -n scan-orchestrator get jobs --sort-by=.metadata.creationTimestamp -o name | tail -1 | cut -d/ -f2)
 ```
 
-Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau là 200). Trong DefectDojo, Product `<cluster>` có CVE của `nginx:1.14.2` (ví dụ CVE-2021-3711) và mục kube-bench. Guide 1 không dựng PostgreSQL target nên `db-scan` được bỏ qua (log `bỏ qua DB scan`); muốn dùng thì tự dựng một PostgreSQL trên Docker network `kind` rồi đặt `PG_TARGET_IP` (và `PG_TARGET_PASSWORD`) trước `make scan`.
+Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau là 200). Trong DefectDojo, Product `<cluster>` có CVE của `nginx:1.14.2` (ví dụ CVE-2021-3711) và mục kube-bench.
 
 **Static analysis cho manifest**: job `lint` của CI (mục 7) chạy `trivy config` trên `workload/` mỗi lần push, phát hiện cấu hình sai trong chính manifest trước khi chúng xuống cluster. `vulnerable-workload` cố ý sai nên sẽ luôn có finding; đó là kết quả đúng.
 
@@ -461,11 +458,11 @@ Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau l�
 ```bash
 #!/usr/bin/env bash
 # run-scans.sh <kubeconfig-workload> <tên-cluster>
-# Chạy trong workload: Trivy (vuln + secret) cho image đang chạy, kube-bench (CIS, node), DB scan,
+# Chạy trong workload: Trivy (vuln + secret) cho image đang chạy, kube-bench (CIS, node),
 # rồi reimport vào DefectDojo (product = tên cluster). Dùng chung cho:
 #   - scripts/scan-now.sh (chạy tay trên VM)
 #   - CronJob scan-orchestrator ở admin (Guide 1, Bước 5), script được mount từ ConfigMap scan-scripts
-# Biến môi trường: DOJO_URL, DOJO_API_KEY (bắt buộc); PG_TARGET_IP, PG_TARGET_PASSWORD, SCAN_NAMESPACES (tùy chọn)
+# Biến môi trường: DOJO_URL, DOJO_API_KEY (bắt buộc); SCAN_NAMESPACES (tùy chọn)
 set -euo pipefail
 WKCFG="${1:?kubeconfig}"; CLUSTER="${2:?tên cluster}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -474,15 +471,13 @@ NS=security-scan
 SCAN_NAMESPACES="${SCAN_NAMESPACES:-vuln-lab policy-lab}"
 TRIVY_IMG="${TRIVY_IMG:-aquasec/trivy:latest}"        # nên pin tag đã kiểm chứng
 KB_IMG="${KB_IMG:-aquasec/kube-bench:latest}"
-PSQL_IMG="${PSQL_IMG:-postgres:16-alpine}"
 OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT
 JOB=""; IMAGE=""; rc=0
 K() { kubectl --kubeconfig="$WKCFG" "$@"; }
 
 render() { # render <template>: thay placeholder __X__
   sed -e "s|__NS__|$NS|g" -e "s|__JOB__|$JOB|g" -e "s|__IMAGE__|$IMAGE|g" \
-      -e "s|__TRIVY_IMG__|$TRIVY_IMG|g" -e "s|__KB_IMG__|$KB_IMG|g" \
-      -e "s|__PSQL_IMG__|$PSQL_IMG|g" -e "s|__PG_TARGET_IP__|${PG_TARGET_IP:-}|g" "$DIR/$1"
+      -e "s|__TRIVY_IMG__|$TRIVY_IMG|g" -e "s|__KB_IMG__|$KB_IMG|g" "$DIR/$1"
 }
 
 run_job() { # run_job <template>: tạo Job, chờ xong, in JSON kết quả ra stdout
@@ -528,18 +523,6 @@ JOB=kube-bench
 if run_job kube-bench-job.yaml.tpl > "$OUT/kube-bench.json"; then
   reimport "kube-bench Scanner" "$OUT/kube-bench.json" "kube-bench - $CLUSTER" || rc=1
 else rc=1; fi
-
-# 3) DB target (nếu có PG_TARGET_IP)
-if [ -n "${PG_TARGET_IP:-}" ]; then
-  K -n "$NS" create secret generic pg-target --from-literal=password="${PG_TARGET_PASSWORD:-poc-weak-pass}" \
-    --dry-run=client -o yaml | K apply -f - >/dev/null
-  JOB=db-scan
-  if run_job db-scan-job.yaml.tpl > "$OUT/db-scan.json"; then
-    reimport "Generic Findings Import" "$OUT/db-scan.json" "PostgreSQL target" || rc=1
-  else rc=1; fi
-else
-  echo "[$CLUSTER] bỏ qua DB scan (PG_TARGET_IP trống)"
-fi
 exit "$rc"
 ```
 
@@ -595,44 +578,6 @@ spec:
         - {name: kubelet, hostPath: {path: /var/lib/kubelet}}
         - {name: k8s, hostPath: {path: /etc/kubernetes}}
         - {name: systemd, hostPath: {path: /etc/systemd}}
-```
-
-`workload/scan/db-scan-job.yaml.tpl`
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: __JOB__
-  namespace: __NS__
-  labels:
-    app.kubernetes.io/part-of: vdt-scan
-spec:
-  backoffLimit: 0
-  ttlSecondsAfterFinished: 3600
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: db-scan
-          image: __PSQL_IMG__
-          env:
-            - name: PGHOST
-              value: "__PG_TARGET_IP__"
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef: {name: pg-target, key: password}
-          command: ["sh", "-c"]
-          args:
-            - |
-              q() { psql -U postgres -Atc "$1"; }
-              VER=$(q "show server_version"); SSL=$(q "show ssl"); ENC=$(q "show password_encryption")
-              out=""
-              add() { out="${out}${out:+,}{\"title\":\"$1\",\"severity\":\"$2\",\"description\":\"$3\"}"; }
-              [ "$SSL" = "off" ] && add "PostgreSQL SSL disabled" "High" "ssl=off on $PGHOST"
-              [ "$ENC" = "md5" ] && add "Weak password_encryption (md5)" "Medium" "Use scram-sha-256"
-              [ "${VER%%.*}" -lt 15 ] && add "PostgreSQL outdated version $VER" "High" "Upgrade to a supported major version"
-              printf '{"findings":[%s]}\n' "$out"
 ```
 
 ---
@@ -924,7 +869,7 @@ spec:
 | Sự kiện                        | Cái gì tự chạy                                                                         | Ai làm                             |
 |--------------------------------|----------------------------------------------------------------------------------------|------------------------------------|
 | Workload được cấp phát có nhãn | Calico, Falco, Sidekick, Talon, Kyverno, namespace, NetworkPolicy, policy, lab target  | CAAPH + ClusterResourceSet (admin) |
-| Mỗi 6 giờ                      | Trivy, kube-bench, DB scan cho **mọi** cluster có nhãn → DefectDojo                    | CronJob orchestrator               |
+| Mỗi 6 giờ                      | Trivy, kube-bench cho **mọi** cluster có nhãn → DefectDojo                              | CronJob orchestrator               |
 | Push lên `main`                | Lint, `trivy config`, `make addons` (đồng bộ cấu hình xuống mọi cluster), verify, test | CI                                 |
 | Hằng đêm / bấm tay             | Cấp phát cluster tạm → chờ tự cài → toàn bộ kịch bản → xoá                             | CI (e2e)                           |
 | ADMIN_NODE_IP đổi              | Chạy lại `make addons`; CAAPH (`Continuous`) tự `helm upgrade` địa chỉ Loki mới        | Bạn hoặc CI                        |
@@ -1502,10 +1447,7 @@ source "$(dirname "$0")/lib.sh"
 use_cluster "${1:-$CLUSTER_NAME}"
 : "${DOJO_URL:=http://${ADMIN_NODE_IP}:31080}"
 : "${DOJO_API_KEY:?export DOJO_API_KEY trước (Guide 1, Bước 2e)}"
-if [ -z "${PG_TARGET_IP:-}" ]; then
-  PG_TARGET_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' pg-target 2>/dev/null || true)"
-fi
-export DOJO_URL DOJO_API_KEY PG_TARGET_IP
+export DOJO_URL DOJO_API_KEY
 "$ROOT/workload/scan/run-scans.sh" "$WK_KUBECONFIG" "$CLUSTER_NAME"
 ```
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # run-scans.sh <kubeconfig-workload> <tên-cluster>
-# Chạy trong workload: Trivy (vuln + secret) cho image đang chạy, kube-bench (CIS, node), DB scan,
+# Chạy trong workload: Trivy (vuln + secret) cho image đang chạy, kube-bench (CIS, node),
 # rồi reimport vào DefectDojo (product = tên cluster). Dùng chung cho:
 #   - scripts/scan-now.sh (chạy tay trên VM)
 #   - CronJob scan-orchestrator ở admin (Guide 1, Bước 5), script được mount từ ConfigMap scan-scripts
-# Biến môi trường: DOJO_URL, DOJO_API_KEY (bắt buộc); PG_TARGET_IP, PG_TARGET_PASSWORD, SCAN_NAMESPACES (tùy chọn)
+# Biến môi trường: DOJO_URL, DOJO_API_KEY (bắt buộc); SCAN_NAMESPACES (tùy chọn)
 set -euo pipefail
 WKCFG="${1:?kubeconfig}"; CLUSTER="${2:?tên cluster}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,15 +13,13 @@ NS=security-scan
 SCAN_NAMESPACES="${SCAN_NAMESPACES:-vuln-lab policy-lab}"
 TRIVY_IMG="${TRIVY_IMG:-aquasec/trivy:latest}"        # nên pin tag đã kiểm chứng
 KB_IMG="${KB_IMG:-aquasec/kube-bench:latest}"
-PSQL_IMG="${PSQL_IMG:-postgres:16-alpine}"
 OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT
 JOB=""; IMAGE=""; rc=0
 K() { kubectl --kubeconfig="$WKCFG" "$@"; }
 
 render() { # render <template>: thay placeholder __X__
   sed -e "s|__NS__|$NS|g" -e "s|__JOB__|$JOB|g" -e "s|__IMAGE__|$IMAGE|g" \
-      -e "s|__TRIVY_IMG__|$TRIVY_IMG|g" -e "s|__KB_IMG__|$KB_IMG|g" \
-      -e "s|__PSQL_IMG__|$PSQL_IMG|g" -e "s|__PG_TARGET_IP__|${PG_TARGET_IP:-}|g" "$DIR/$1"
+      -e "s|__TRIVY_IMG__|$TRIVY_IMG|g" -e "s|__KB_IMG__|$KB_IMG|g" "$DIR/$1"
 }
 
 run_job() { # run_job <template>: tạo Job, chờ xong, in JSON kết quả ra stdout
@@ -67,16 +65,4 @@ JOB=kube-bench
 if run_job kube-bench-job.yaml.tpl > "$OUT/kube-bench.json"; then
   reimport "kube-bench Scanner" "$OUT/kube-bench.json" "kube-bench - $CLUSTER" || rc=1
 else rc=1; fi
-
-# 3) DB target (nếu có PG_TARGET_IP)
-if [ -n "${PG_TARGET_IP:-}" ]; then
-  K -n "$NS" create secret generic pg-target --from-literal=password="${PG_TARGET_PASSWORD:-poc-weak-pass}" \
-    --dry-run=client -o yaml | K apply -f - >/dev/null
-  JOB=db-scan
-  if run_job db-scan-job.yaml.tpl > "$OUT/db-scan.json"; then
-    reimport "Generic Findings Import" "$OUT/db-scan.json" "PostgreSQL target" || rc=1
-  else rc=1; fi
-else
-  echo "[$CLUSTER] bỏ qua DB scan (PG_TARGET_IP trống)"
-fi
 exit "$rc"
