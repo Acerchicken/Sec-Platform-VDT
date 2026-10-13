@@ -71,6 +71,8 @@ text { fill: var(--fg); font-size: 12px; }
 
   <rect class="fw" x="640" y="180" width="520" height="544" rx="6"/>
   <text class="h" x="660" y="206">Workload · capi-quickstart</text>
+  <rect class="ns" x="650" y="212" width="500" height="502" rx="6"/>
+  <text class="ht" x="664" y="700">Node worker</text>
   <rect class="chip" x="1070" y="188" width="74" height="28" rx="4"/><text class="c" x="1107" y="206.5">Calico</text>
   <rect class="bx-p" x="660" y="220" width="230" height="90" rx="4"/>
   <text class="lb" x="676" y="240">ns kyverno</text>
@@ -93,7 +95,6 @@ text { fill: var(--fg); font-size: 12px; }
   <rect class="bx" x="1000" y="574" width="140" height="60" rx="4"/>
   <text class="c" x="1070" y="608">ns default</text>
 
-  <rect class="bx" x="660" y="664" width="480" height="40" rx="4"/><text class="c" x="900" y="688.5">Node worker</text>
 
   <path class="a a-g a-d" d="M25 54 V454 H58" marker-end="url(#ag)"/>
   <path class="a a-g a-d" d="M25 454 V606 H58" marker-end="url(#ag)"/>
@@ -112,5 +113,5 @@ text { fill: var(--fg); font-size: 12px; }
   <path class="a a-g a-d" d="M150 578 V484" marker-end="url(#ag)"/>
   <path class="a a-s" d="M930 346 V312" marker-end="url(#as)"/>
   <path class="a a-s" d="M898 380 V572" marker-end="url(#as)"/>
-  <path class="a a-s" d="M1124 363 H1150 V684 H1142" marker-end="url(#as)"/>
+  <path class="a a-s" d="M1124 363 H1146 V695 H760" marker-end="url(#as)"/>
 </svg>
