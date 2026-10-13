@@ -20,10 +20,10 @@ wait_for "Falcosidekick bật output WebHook (-> Talon)" 120 "sidekick_has WebHo
 
 wait_for "Kyverno admission controller" "$T" "kw -n kyverno rollout status deploy/kyverno-admission-controller --timeout=10s"
 policy_ready() {
-  [ "$(kw get clusterpolicy "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]
+  [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
 for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
-  wait_for "ClusterPolicy $p Ready" "$T" "policy_ready $p"
+  wait_for "ValidatingPolicy $p Ready" "$T" "policy_ready $p"
 done
 
 wait_for "namespace policy-lab có nhãn policy=enforce" 300 \

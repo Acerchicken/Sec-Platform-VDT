@@ -14,7 +14,7 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 | Cấu hình cụm theo CIS        | kube-bench `--targets node`                                         | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator                |
 | Cấu hình DB (tùy chọn)       | Job psql kiểm tra SSL, mã hoá mật khẩu, version                     | Job ở `security-scan`            | DefectDojo                        | Chỉ chạy khi đặt `PG_TARGET_IP`     |
 | Sec runtime                  | Falco + Falcosidekick + Falco-Talon                                 | DaemonSet + Deployment ở `falco` | Loki/Grafana + phản ứng tự động   | HelmChartProxy (CAAPH)              |
-| **Policy enforcement (mới)** | Kyverno + 3 ClusterPolicy                                           | Admission webhook ở `kyverno`    | Chặn ngay khi apply, PolicyReport | HelmChartProxy + ClusterResourceSet |
+| **Policy enforcement (mới)** | Kyverno + 3 ValidatingPolicy (CEL)                                  | Admission webhook ở `kyverno`    | Chặn ngay khi apply, PolicyReport | HelmChartProxy + ClusterResourceSet |
 
     admin cluster                                                    workload cluster mới
     ─────────────                                                    ────────────────────
@@ -24,13 +24,13 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
     HelmChartProxy vdt-falco ──────────┼──────────────────────────► Falco + Falcosidekick ──► Loki (admin)
     HelmChartProxy vdt-falco-talon ────┼──────────────────────────► Falco-Talon (nhận webhook từ Sidekick)
     HelmChartProxy vdt-kyverno ────────┼──────────────────────────► Kyverno
-    ClusterResourceSet vdt-security-baseline ─────────────────────► namespace, NetworkPolicy, ClusterPolicy
+    ClusterResourceSet vdt-security-baseline ─────────────────────► namespace, NetworkPolicy, ValidatingPolicy
     ClusterResourceSet vdt-lab-target ────────────────────────────► vulnerable-workload (mục tiêu lab)
     CronJob scan-orchestrator ── mỗi 6h liệt kê cluster có nhãn ──► Job Trivy / kube-bench / DB ──► DefectDojo
 
 | Nhãn trên đối tượng `Cluster` | Kích hoạt                                                                                                |
 |-------------------------------|----------------------------------------------------------------------------------------------------------|
-| `security-baseline=enabled`   | Falco, Sidekick, Talon, Kyverno, namespace, NetworkPolicy, ClusterPolicy; orchestrator đưa vào lịch scan |
+| `security-baseline=enabled`   | Falco, Sidekick, Talon, Kyverno, namespace, NetworkPolicy, ValidatingPolicy; orchestrator đưa vào lịch scan |
 | `cni=calico`                  | Calico VXLAN (chỉ gắn cho cluster **chưa** có CNI)                                                       |
 | `lab-target=enabled`          | Deployment `vulnerable-workload` trong `vuln-lab` (mục tiêu cho scan và kịch bản runtime)                |
 
@@ -254,7 +254,7 @@ spec:
       security-baseline: enabled
   repoURL: https://kyverno.github.io/kyverno/
   chartName: kyverno
-  # version: "x.y.z"   # pin sau khi chạy ổn: helm search repo kyverno/kyverno --versions
+  version: "3.9.1"     # Kyverno v1.19.1; ValidatingPolicy policies.kyverno.io/v1 cần Kyverno >= 1.19
   releaseName: kyverno
   namespace: kyverno
   reconcileStrategy: Continuous
@@ -710,9 +710,9 @@ Lưu ý:
 
 ## 6. Giải pháp 4: Policy enforcement (Kyverno)
 
-Kyverno là admission webhook: mọi Pod (và Deployment/Job… nhờ autogen) đi qua policy **trước khi** được lưu vào cluster. Chọn Kyverno vì policy viết bằng YAML như manifest thường, có sẵn PolicyReport, cài bằng một chart. (Thay thế: OPA Gatekeeper dùng Rego; Pod Security Admission có sẵn nhưng chỉ 3 mức cố định.)
+Kyverno là admission webhook: mọi Pod (và Deployment/Job… nhờ autogen) đi qua policy **trước khi** được lưu vào cluster. Chọn Kyverno vì cài bằng một chart, có sẵn PolicyReport và autogen cho controller. Policy viết dạng **ValidatingPolicy** (`policies.kyverno.io/v1`) với biểu thức **CEL**, cùng ngôn ngữ với ValidatingAdmissionPolicy của Kubernetes, theo [hướng dẫn chuyển sang CEL](https://kyverno.io/docs/guides/migration-to-cel/): ClusterPolicy kiểu `pattern` đã deprecated từ Kyverno 1.19 và sẽ bị gỡ ở 1.20. (Thay thế: OPA Gatekeeper dùng Rego; Pod Security Admission có sẵn nhưng chỉ 3 mức cố định.)
 
-| ClusterPolicy             | Chặn                                               | Lý do                                        |
+| ValidatingPolicy          | Chặn                                               | Lý do                                        |
 |---------------------------|----------------------------------------------------|----------------------------------------------|
 | `vdt-disallow-privileged` | Container `privileged: true` (kể cả initContainer) | Privileged = gần như root trên node          |
 | `vdt-disallow-latest-tag` | Image không có tag hoặc tag `:latest`              | Không truy vết/scan được phiên bản thực chạy |
@@ -723,103 +723,91 @@ Phạm vi: chỉ namespace có nhãn `policy=enforce` (mặc định `policy-lab
 `workload/manifests/10-kyverno-policies.yaml`
 
 ```yaml
-# Policy Enforcement: 3 ClusterPolicy chế độ Enforce, chỉ áp cho namespace có nhãn policy=enforce.
-# Kyverno tự sinh rule tương ứng cho Deployment/StatefulSet/Job... (autogen).
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+# Policy Enforcement: 3 ValidatingPolicy (CEL, policies.kyverno.io/v1, Kyverno >= 1.19), chế độ Deny,
+# chỉ áp cho namespace có nhãn policy=enforce.
+# Viết cho Pod; Kyverno tự sinh bản cho Deployment/StatefulSet/DaemonSet/Job/CronJob... (autogen mặc định,
+# đổi `object.spec` thành `object.spec.template.spec`). Muốn giới hạn: spec.autogen.podControllers.controllers.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: vdt-disallow-privileged
   annotations:
     policies.kyverno.io/title: Disallow privileged containers
     policies.kyverno.io/severity: high
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: no-privileged
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaceSelector:
-                matchLabels:
-                  policy: enforce
-      validate:
-        message: "[vdt-disallow-privileged] Privileged containers are not allowed."
-        pattern:
-          spec:
-            =(initContainers):
-              - =(securityContext):
-                  =(privileged): "false"
-            containers:
-              - =(securityContext):
-                  =(privileged): "false"
+  validationActions: [Deny]
+  evaluation:
+    background: {enabled: true}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        policy: enforce
+  variables:
+    - name: allContainers
+      expression: object.spec.containers + object.spec.?initContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.allContainers.all(c, c.?securityContext.?privileged.orValue(false) == false)
+      message: "[vdt-disallow-privileged] Privileged containers are not allowed."
 ---
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: vdt-disallow-latest-tag
   annotations:
     policies.kyverno.io/title: Require explicit, non-latest image tag
     policies.kyverno.io/severity: medium
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: require-image-tag
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaceSelector:
-                matchLabels:
-                  policy: enforce
-      validate:
-        message: "[vdt-disallow-latest-tag] Image must have an explicit tag."
-        pattern:
-          spec:
-            containers:
-              - image: "*:*"
-    - name: no-latest-tag
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaceSelector:
-                matchLabels:
-                  policy: enforce
-      validate:
-        message: "[vdt-disallow-latest-tag] Image tag ':latest' is not allowed."
-        pattern:
-          spec:
-            containers:
-              - image: "!*:latest"
+  validationActions: [Deny]
+  evaluation:
+    background: {enabled: true}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        policy: enforce
+  validations:
+    # Có tag = có ':' sau dấu '/' cuối (không nhầm cổng registry, vd. registry:5000/app); digest '@sha256:' cũng được
+    - expression: >-
+        object.spec.containers.all(c, c.image.lastIndexOf(':') > c.image.lastIndexOf('/'))
+      message: "[vdt-disallow-latest-tag] Image must have an explicit tag."
+    - expression: >-
+        object.spec.containers.all(c, !c.image.endsWith(':latest'))
+      message: "[vdt-disallow-latest-tag] Image tag ':latest' is not allowed."
 ---
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: vdt-require-nonroot
   annotations:
     policies.kyverno.io/title: Require runAsNonRoot
     policies.kyverno.io/severity: high
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: run-as-nonroot
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaceSelector:
-                matchLabels:
-                  policy: enforce
-      validate:
-        message: "[vdt-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."
-        pattern:
-          spec:
-            securityContext:
-              runAsNonRoot: true
+  validationActions: [Deny]
+  evaluation:
+    background: {enabled: true}
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        policy: enforce
+  validations:
+    - expression: >-
+        object.spec.?securityContext.?runAsNonRoot.orValue(false) == true
+      message: "[vdt-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."
 ```
 
 ### Kịch bản test
@@ -843,9 +831,8 @@ Chạy tay để demo:
 ```bash
 cd ~/vdt/Sec-Platform-VDT/workload/tests/fixtures
 kw -n policy-lab apply -f pod-privileged.yaml
-# Error from server: ... admission webhook "validate.kyverno.svc-fail" denied the request:
-#   resource Pod/policy-lab/pt-privileged was blocked due to the following policies
-#   vdt-disallow-privileged: no-privileged: '[vdt-disallow-privileged] Privileged containers are not allowed.'
+# Error from server: admission webhook "...kyverno.svc-fail" denied the request: ...
+#   [vdt-disallow-privileged] Privileged containers are not allowed.
 kw -n policy-lab apply -f pod-latest.yaml        # bị chặn
 kw -n policy-lab apply -f pod-root.yaml          # bị chặn
 kw -n policy-lab apply -f pod-compliant.yaml     # pod/pt-compliant created
@@ -854,7 +841,8 @@ kw -n policy-lab delete pod pt-compliant
 # Deployment cũng bị chặn (autogen): ReplicaSet không tạo được pod nào
 kw -n policy-lab create deployment bad --image=nginx:latest     # bị từ chối ngay ở Deployment
 
-# Báo cáo vi phạm của tài nguyên đang tồn tại (background scan)
+# Trạng thái policy (READY=true) và báo cáo vi phạm của tài nguyên đang tồn tại (background scan)
+kw get validatingpolicy                                          # viết tắt: kw get vpol
 kw get policyreport -A
 ```
 
@@ -1073,7 +1061,7 @@ lint: ## shellcheck + yamllint (cần cài sẵn)
 | Triệu chứng                        | Kiểm tra                                                                                                                                                 | Hướng xử lý                                                                                                                     |
 |------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
 | `verify` kẹt ở Falco/Talon/Kyverno | `kubectl get helmreleaseproxies -A`; `kubectl describe helmreleaseproxy <tên>`; `kubectl -n caaph-system logs deploy/caaph-controller-manager --tail=50` | Lỗi chart/values hiện trong status; sửa file trong `addons/` rồi `make addons`                                                  |
-| ClusterPolicy chưa xuất hiện       | `kubectl get clusterresourcesetbindings -o yaml`                                                                                                         | ClusterResourceSet thử lại tới khi CRD Kyverno có; thường chậm vài phút sau khi Kyverno Ready                                   |
+| ValidatingPolicy chưa xuất hiện    | `kubectl get clusterresourcesetbindings -o yaml`                                                                                                         | ClusterResourceSet thử lại tới khi CRD Kyverno có; thường chậm vài phút sau khi Kyverno Ready                                   |
 | Sidekick không có output WebHook   | `kw -n falco logs deploy/falco-falcosidekick | grep 'Enabled Outputs'`                                                                                   | Kiểm tra `webhook.address` trong `10-hcp-falco.yaml`, `make addons`                                                             |
 | Không có alert trong Loki          | `echo $LOKI_URL` vs `kw -n falco get secret falco-falcosidekick -o yaml`                                                                                 | IP admin đổi: `make addons`                                                                                                     |
 | RT-1 FAIL "pod vẫn chạy"           | `kw -n falco logs deploy/falco-talon`                                                                                                                    | Rule Talon không khớp (thiếu `k8s.ns.name` trong alert) hoặc RBAC của Talon                                                     |
@@ -1572,10 +1560,10 @@ wait_for "Falcosidekick bật output WebHook (-> Talon)" 120 "sidekick_has WebHo
 
 wait_for "Kyverno admission controller" "$T" "kw -n kyverno rollout status deploy/kyverno-admission-controller --timeout=10s"
 policy_ready() {
-  [ "$(kw get clusterpolicy "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]
+  [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
 for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
-  wait_for "ClusterPolicy $p Ready" "$T" "policy_ready $p"
+  wait_for "ValidatingPolicy $p Ready" "$T" "policy_ready $p"
 done
 
 wait_for "namespace policy-lab có nhãn policy=enforce" 300 \
@@ -1691,10 +1679,10 @@ FX="$(cd "$(dirname "$0")" && pwd)/fixtures"
 NS=policy-lab
 
 policy_ready() {
-  [ "$(kw get clusterpolicy "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]
+  [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
 for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
-  poll 300 policy_ready "$p" || die "ClusterPolicy $p chưa Ready (chạy verify.sh trước)"
+  poll 300 policy_ready "$p" || die "ValidatingPolicy $p chưa Ready (chạy verify.sh trước)"
 done
 
 expect_denied() { # expect_denied <id> <mô tả> <file> <tên policy>

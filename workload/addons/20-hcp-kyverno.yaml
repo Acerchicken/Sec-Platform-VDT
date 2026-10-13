@@ -9,7 +9,7 @@ spec:
       security-baseline: enabled
   repoURL: https://kyverno.github.io/kyverno/
   chartName: kyverno
-  # version: "x.y.z"   # pin sau khi chạy ổn: helm search repo kyverno/kyverno --versions
+  version: "3.9.1"     # Kyverno v1.19.1; ValidatingPolicy policies.kyverno.io/v1 cần Kyverno >= 1.19
   releaseName: kyverno
   namespace: kyverno
   reconcileStrategy: Continuous

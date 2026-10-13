@@ -10,7 +10,7 @@ automatically gets Falco/Sidekick/Talon, Kyverno, namespaces, NetworkPolicy and 
 05-admin-apps/defectdojo|loki|grafana        Admin (helm): values
 05-admin-apps/orchestrator/orchestrator.yaml Admin: scan-orchestrator CronJob (multi-cluster, suspended by default)
 workload/addons/                             Admin: HelmChartProxy (Falco, Talon, Kyverno) + ClusterResourceSet
-workload/manifests/                          Applied to workloads by CRS: namespaces, Kyverno policies, quarantine NetworkPolicy, lab target
+workload/manifests/                          Applied to workloads by CRS: namespaces, Kyverno ValidatingPolicy (CEL), quarantine NetworkPolicy, lab target
 workload/scan/                               run-scans.sh + Job templates (loaded into the scan-scripts ConfigMap)
 workload/tests/                              verify, RT-1..3, PE-1..5, e2e, fixtures
 scripts/                                     install-deps.sh, preflight.sh, lib.sh, render.sh, provision-cluster.sh, scan-now.sh
@@ -96,5 +96,5 @@ make verify CLUSTER=capi-quickstart
 - **IPs change after Docker resumes**: `source env.sh`, re-run `make addons` (CAAPH updates the Loki address for Sidekick automatically).
 - `workload/addons/10-hcp-falco.yaml` contains `__LOKI_URL__`: `scripts/render.sh` replaces it with the real address when applying. Do not `kubectl apply` this file directly.
 - ClusterResourceSet uses `addons.cluster.x-k8s.io/v1beta2` (same version as `Cluster`/`ClusterClass` in this repo).
-- The `trivy`, `kube-bench`, `alpine/k8s` images and the Falco/Kyverno charts are not version-pinned yet: pin them before the demo (see the comments in each file).
-- Kyverno policies only apply to namespaces labeled `policy=enforce` (default `policy-lab`); `vuln-lab` is intentionally left unlabeled so the lab target keeps running.
+- The `trivy`, `kube-bench`, `alpine/k8s` images and the Falco chart are not version-pinned yet (the Kyverno chart is pinned to 3.9.1 / Kyverno v1.19.1, needed for `policies.kyverno.io/v1`): pin them before the demo (see the comments in each file).
+- Kyverno policies are CEL-based `ValidatingPolicy` objects (`kubectl get vpol`), following the [Kyverno migration guide](https://kyverno.io/docs/guides/migration-to-cel/); they only apply to namespaces labeled `policy=enforce` (default `policy-lab`); `vuln-lab` is intentionally left unlabeled so the lab target keeps running.

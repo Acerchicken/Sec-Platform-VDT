@@ -15,10 +15,10 @@ FX="$(cd "$(dirname "$0")" && pwd)/fixtures"
 NS=policy-lab
 
 policy_ready() {
-  [ "$(kw get clusterpolicy "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]
+  [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
 for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
-  poll 300 policy_ready "$p" || die "ClusterPolicy $p chưa Ready (chạy verify.sh trước)"
+  poll 300 policy_ready "$p" || die "ValidatingPolicy $p chưa Ready (chạy verify.sh trước)"
 done
 
 expect_denied() { # expect_denied <id> <mô tả> <file> <tên policy>
