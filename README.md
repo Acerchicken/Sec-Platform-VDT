@@ -4,6 +4,8 @@ Matches **Guide 1/2 (Admin cluster)** and **Guide 2/2 (Workload cluster, auto-in
 The admin cluster (kind + CAPI + CAPD + CAAPH) is declared once; any workload cluster labeled `security-baseline=enabled`
 automatically gets Falco/Sidekick/Talon, Kyverno, namespaces, NetworkPolicy and policies. No more manual `helm install` into workloads.
 
+![VDT lab architecture](docs/images/vdt-lab-architecture.svg)
+
 ```
 01-admin-cluster/kind-config.yaml            Admin: kind
 02-workload-cluster/                         Admin (kubectl): ClusterClass, Cluster (labeled), calico.yaml (for clusters with Calico installed manually)
