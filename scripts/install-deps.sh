@@ -67,7 +67,7 @@ if ! has docker; then
 fi
 if has docker && ! docker compose version >/dev/null 2>&1; then
   { sudo apt-get install -y -qq docker-compose-v2 >/dev/null 2>&1 || sudo apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1; } \
-    && pass "docker compose plugin" || warn "không cài được docker compose plugin (chỉ cần nếu dùng 04-pg-target/compose.yaml; 'docker run' trong Guide 1 vẫn chạy)"
+    && pass "docker compose plugin" || warn "không cài được docker compose plugin (Guide 1/2 không bắt buộc)"
 fi
 if has docker; then
   sudo systemctl enable --now docker >/dev/null 2>&1 || true

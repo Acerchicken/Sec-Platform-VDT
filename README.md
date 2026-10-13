@@ -7,7 +7,6 @@ automatically gets Falco/Sidekick/Talon, Kyverno, namespaces, NetworkPolicy and 
 ```
 01-admin-cluster/kind-config.yaml            Admin: kind
 02-workload-cluster/                         Admin (kubectl): ClusterClass, Cluster (labeled), calico.yaml (for clusters with Calico installed manually)
-04-pg-target/compose.yaml                    Docker (kind network): PostgreSQL target
 05-admin-apps/defectdojo|loki|grafana        Admin (helm): values
 05-admin-apps/orchestrator/orchestrator.yaml Admin: scan-orchestrator CronJob (multi-cluster, suspended by default)
 workload/addons/                             Admin: HelmChartProxy (Falco, Talon, Kyverno) + ClusterResourceSet
@@ -60,7 +59,6 @@ export DOJO_DB_PASS=$(kubectl -n defectdojo get secret defectdojo-postgresql-spe
 envsubst '${GRAFANA_PASS} ${DOJO_DB_PASS}' < 05-admin-apps/grafana/values.yaml.tpl \
   | helm upgrade --install grafana grafana/grafana -n monitoring --create-namespace -f -
 
-docker compose -f 04-pg-target/compose.yaml up -d
 source env.sh
 DOJO_PASS=$(kubectl -n defectdojo get secret defectdojo -o jsonpath='{.data.DD_ADMIN_PASSWORD}' | base64 -d)
 export DOJO_API_KEY=$(curl -sS -X POST "$DOJO_URL/api/v2/api-token-auth/" -H 'Content-Type: application/json' \
@@ -69,8 +67,7 @@ export DOJO_API_KEY=$(curl -sS -X POST "$DOJO_URL/api/v2/api-token-auth/" -H 'Co
 # Orchestrator (the file header has all the secret-creation commands; this step creates the CronJob in suspended state)
 kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n scan-orchestrator create secret generic dojo-api --from-literal=token="$DOJO_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n scan-orchestrator create secret generic pg-target --from-literal=password=poc-weak-pass --dry-run=client -o yaml | kubectl apply -f -
-sed "s|__PG_TARGET_IP__|${PG_TARGET_IP}|" 05-admin-apps/orchestrator/orchestrator.yaml | kubectl apply -f -
+kubectl apply -f 05-admin-apps/orchestrator/orchestrator.yaml
 
 # Guide 2 – enable auto-install, then enable the CronJob
 make addons
@@ -96,8 +93,7 @@ make verify CLUSTER=capi-quickstart
 
 ## Notes
 
-- **IPs change after Docker resumes**: `source env.sh`, re-run `make addons` (CAAPH updates the Loki address for Sidekick automatically),
-  and if `PG_TARGET_IP` changed, re-run the orchestrator `sed ... | kubectl apply` command.
+- **IPs change after Docker resumes**: `source env.sh`, re-run `make addons` (CAAPH updates the Loki address for Sidekick automatically).
 - `workload/addons/10-hcp-falco.yaml` contains `__LOKI_URL__`: `scripts/render.sh` replaces it with the real address when applying. Do not `kubectl apply` this file directly.
 - ClusterResourceSet uses `addons.cluster.x-k8s.io/v1beta2` (same version as `Cluster`/`ClusterClass` in this repo).
 - The `trivy`, `kube-bench`, `alpine/k8s` images and the Falco/Kyverno charts are not version-pinned yet: pin them before the demo (see the comments in each file).

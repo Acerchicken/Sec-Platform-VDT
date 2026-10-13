@@ -3,7 +3,6 @@
 # kw / hw = kubectl / helm trỏ workload cluster đang thao tác. Đổi cluster: CLUSTER=team-a source env.sh
 export VDT_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export ADMIN_NODE_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' kind-control-plane 2>/dev/null)
-export PG_TARGET_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' pg-target 2>/dev/null)
 export DOJO_URL="http://${ADMIN_NODE_IP}:31080"
 export LOKI_URL="http://${ADMIN_NODE_IP}:31100"
 export CLUSTER="${CLUSTER:-capi-quickstart}"

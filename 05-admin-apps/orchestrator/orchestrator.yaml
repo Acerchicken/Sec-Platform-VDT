@@ -2,13 +2,11 @@
 # Script nằm ở ConfigMap scan-orchestrator/scan-scripts (make addons nạp từ workload/scan/).
 # CronJob tạo ở trạng thái suspend; bật sau khi có ConfigMap:
 #   kubectl -n scan-orchestrator patch cronjob scan-orchestrator -p '{"spec":{"suspend":false}}'
-# Cài (thay __PG_TARGET_IP__ bằng IP container pg-target):
+# Cài:
 #   source env.sh
 #   kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f -
 #   kubectl -n scan-orchestrator create secret generic dojo-api --from-literal=token="$DOJO_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
-#   kubectl -n scan-orchestrator create secret generic pg-target --from-literal=password=poc-weak-pass --dry-run=client -o yaml | kubectl apply -f -
-#   sed "s|__PG_TARGET_IP__|${PG_TARGET_IP}|" 05-admin-apps/orchestrator/orchestrator.yaml | kubectl apply -f -
-# Nếu PG_TARGET_IP đổi sau khi resume Docker: chạy lại lệnh sed ... | kubectl apply trên.
+#   kubectl apply -f 05-admin-apps/orchestrator/orchestrator.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -69,11 +67,8 @@ spec:
               exit $rc
             env:
             - {name: DOJO_URL, value: "http://defectdojo-django.defectdojo.svc.cluster.local"}
-            - {name: PG_TARGET_IP, value: "__PG_TARGET_IP__"}
             - name: DOJO_API_KEY
               valueFrom: {secretKeyRef: {name: dojo-api, key: token}}
-            - name: PG_TARGET_PASSWORD
-              valueFrom: {secretKeyRef: {name: pg-target, key: password}}
             volumeMounts:
             - {name: scripts, mountPath: /scripts}
           volumes:

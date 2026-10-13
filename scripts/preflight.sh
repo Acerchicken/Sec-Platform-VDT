@@ -108,7 +108,7 @@ else
     || fail "thiếu ClusterClass quick-start: kubectl apply -f 02-workload-cluster/clusterclass-quick-start.yaml"
 
   kubectl -n scan-orchestrator get cronjob scan-orchestrator >/dev/null 2>&1 \
-    && pass "CronJob scan-orchestrator" || warn "chưa có CronJob scan-orchestrator (Guide 1, Bước 6)"
+    && pass "CronJob scan-orchestrator" || warn "chưa có CronJob scan-orchestrator (Guide 1, Bước 5)"
   ip=""
   has docker && ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$ADMIN_CONTAINER" 2>/dev/null)"
   if [ -n "$ip" ]; then

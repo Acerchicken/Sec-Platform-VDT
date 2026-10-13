@@ -46,7 +46,7 @@ cm sec-baseline-netpol     workload/manifests/20-quarantine-netpol.yaml
 cm sec-baseline-policies   workload/manifests/10-kyverno-policies.yaml
 cm sec-lab-target          workload/manifests/30-lab-target.yaml
 
-# 3) Script scan cho CronJob orchestrator (Guide 1, Bước 6)
+# 3) Script scan cho CronJob orchestrator (Guide 1, Bước 5)
 kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl -n scan-orchestrator create configmap scan-scripts --from-file=workload/scan/ \
   --dry-run=client -o yaml | kubectl apply --server-side --force-conflicts -f - >/dev/null

@@ -12,7 +12,7 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 |------------------------------|---------------------------------------------------------------------|----------------------------------|-----------------------------------|-------------------------------------|
 | Image & Static analysis      | Trivy `image` (vuln + secret); Trivy `config` cho manifest trong CI | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator (admin)        |
 | Cấu hình cụm theo CIS        | kube-bench `--targets node`                                         | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator                |
-| Cấu hình DB                  | Job psql kiểm tra SSL, mã hoá mật khẩu, version                     | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator                |
+| Cấu hình DB (tùy chọn)       | Job psql kiểm tra SSL, mã hoá mật khẩu, version                     | Job ở `security-scan`            | DefectDojo                        | Chỉ chạy khi đặt `PG_TARGET_IP`     |
 | Sec runtime                  | Falco + Falcosidekick + Falco-Talon                                 | DaemonSet + Deployment ở `falco` | Loki/Grafana + phản ứng tự động   | HelmChartProxy (CAAPH)              |
 | **Policy enforcement (mới)** | Kyverno + 3 ClusterPolicy                                           | Admission webhook ở `kyverno`    | Chặn ngay khi apply, PolicyReport | HelmChartProxy + ClusterResourceSet |
 
@@ -430,7 +430,7 @@ make verify CLUSTER=capi-quickstart
 
 ---
 
-## 4. Giải pháp 1–2: Image & Static analysis, CIS benchmark (+ DB)
+## 4. Giải pháp 1–2: Image & Static analysis, CIS benchmark (+ DB tùy chọn)
 
 Orchestrator ở admin gọi `run-scans.sh` cho từng cluster có nhãn. Script tạo Job trong namespace `security-scan` của workload, đọc kết quả JSON từ log rồi `reimport-scan` vào DefectDojo. Mỗi cluster là một Product, lần reimport sau tự đóng finding đã hết (`close_old_findings`).
 
@@ -438,7 +438,7 @@ Orchestrator ở admin gọi `run-scans.sh` cho từng cluster có nhãn. Script
 |---------------------------------------------------------------------|------------------------------------------------------|-------------------------|
 | `trivy-<hash>` (mỗi image đang chạy trong `vuln-lab`, `policy-lab`) | `trivy image --scanners vuln,secret`                 | Trivy Scan              |
 | `kube-bench`                                                        | `kube-bench run --targets node --json`               | kube-bench Scanner      |
-| `db-scan` (khi có `PG_TARGET_IP`)                                   | psql: `ssl`, `password_encryption`, `server_version` | Generic Findings Import |
+| `db-scan` (tùy chọn, khi có `PG_TARGET_IP`)                         | psql: `ssl`, `password_encryption`, `server_version` | Generic Findings Import |
 
 Chạy ngay, không chờ lịch:
 
@@ -452,7 +452,7 @@ kubectl -n scan-orchestrator create job --from=cronjob/scan-orchestrator scan-no
 kubectl -n scan-orchestrator logs -f job/$(kubectl -n scan-orchestrator get jobs --sort-by=.metadata.creationTimestamp -o name | tail -1 | cut -d/ -f2)
 ```
 
-Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau là 200). Trong DefectDojo, Product `<cluster>` có CVE của `nginx:1.14.2` (ví dụ CVE-2021-3711), mục kube-bench và 3 finding PostgreSQL.
+Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau là 200). Trong DefectDojo, Product `<cluster>` có CVE của `nginx:1.14.2` (ví dụ CVE-2021-3711) và mục kube-bench. Guide 1 không dựng PostgreSQL target nên `db-scan` được bỏ qua (log `bỏ qua DB scan`); muốn dùng thì tự dựng một PostgreSQL trên Docker network `kind` rồi đặt `PG_TARGET_IP` (và `PG_TARGET_PASSWORD`) trước `make scan`.
 
 **Static analysis cho manifest**: job `lint` của CI (mục 7) chạy `trivy config` trên `workload/` mỗi lần push, phát hiện cấu hình sai trong chính manifest trước khi chúng xuống cluster. `vulnerable-workload` cố ý sai nên sẽ luôn có finding; đó là kết quả đúng.
 
@@ -464,7 +464,7 @@ Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau l�
 # Chạy trong workload: Trivy (vuln + secret) cho image đang chạy, kube-bench (CIS, node), DB scan,
 # rồi reimport vào DefectDojo (product = tên cluster). Dùng chung cho:
 #   - scripts/scan-now.sh (chạy tay trên VM)
-#   - CronJob scan-orchestrator ở admin (Guide 1, Bước 6), script được mount từ ConfigMap scan-scripts
+#   - CronJob scan-orchestrator ở admin (Guide 1, Bước 5), script được mount từ ConfigMap scan-scripts
 # Biến môi trường: DOJO_URL, DOJO_API_KEY (bắt buộc); PG_TARGET_IP, PG_TARGET_PASSWORD, SCAN_NAMESPACES (tùy chọn)
 set -euo pipefail
 WKCFG="${1:?kubeconfig}"; CLUSTER="${2:?tên cluster}"
@@ -1157,7 +1157,7 @@ if ! has docker; then
 fi
 if has docker && ! docker compose version >/dev/null 2>&1; then
   { sudo apt-get install -y -qq docker-compose-v2 >/dev/null 2>&1 || sudo apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1; } \
-    && pass "docker compose plugin" || warn "không cài được docker compose plugin (chỉ cần nếu dùng 04-pg-target/compose.yaml; 'docker run' trong Guide 1 vẫn chạy)"
+    && pass "docker compose plugin" || warn "không cài được docker compose plugin (Guide 1/2 không bắt buộc)"
 fi
 if has docker; then
   sudo systemctl enable --now docker >/dev/null 2>&1 || true
@@ -1329,7 +1329,7 @@ else
     || fail "thiếu ClusterClass quick-start: kubectl apply -f 02-workload-cluster/clusterclass-quick-start.yaml"
 
   kubectl -n scan-orchestrator get cronjob scan-orchestrator >/dev/null 2>&1 \
-    && pass "CronJob scan-orchestrator" || warn "chưa có CronJob scan-orchestrator (Guide 1, Bước 6)"
+    && pass "CronJob scan-orchestrator" || warn "chưa có CronJob scan-orchestrator (Guide 1, Bước 5)"
   ip=""
   has docker && ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$ADMIN_CONTAINER" 2>/dev/null)"
   if [ -n "$ip" ]; then
@@ -1450,7 +1450,7 @@ cm sec-baseline-netpol     workload/manifests/20-quarantine-netpol.yaml
 cm sec-baseline-policies   workload/manifests/10-kyverno-policies.yaml
 cm sec-lab-target          workload/manifests/30-lab-target.yaml
 
-# 3) Script scan cho CronJob orchestrator (Guide 1, Bước 6)
+# 3) Script scan cho CronJob orchestrator (Guide 1, Bước 5)
 kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl -n scan-orchestrator create configmap scan-scripts --from-file=workload/scan/ \
   --dry-run=client -o yaml | kubectl apply --server-side --force-conflicts -f - >/dev/null

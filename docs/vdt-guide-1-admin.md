@@ -8,15 +8,14 @@ Hướng dẫn này dựng **Admin cluster** (kind + Cluster API) và các dịc
 | CAPI controllers + CAPD + **CAAPH** (Helm add-on) + ClusterResourceSet | Admin (kind)     | `clusterctl init`  | 1    |
 | DefectDojo                                                             | Admin            | Helm               | 2    |
 | Loki                                                                   | Admin            | Helm               | 3    |
-| Grafana + dashboard                                                    | Admin            | Helm + UI          | 4, 8 |
-| PostgreSQL target (mục tiêu DB scan)                                   | Container Docker | `docker run`       | 5    |
-| Scan orchestrator (đa cluster)                                         | Admin            | CronJob            | 6    |
+| Grafana + dashboard                                                    | Admin            | Helm + UI          | 4, 7 |
+| Scan orchestrator (đa cluster)                                         | Admin            | CronJob            | 5    |
 
 Luồng dữ liệu phía admin:
 
     clusterctl / Guide 2 ──► CAPI + CAPD ──► tạo workload cluster (container Docker)
     CAAPH + ClusterResourceSet ──► tự cài tool bảo mật vào workload có nhãn (Guide 2)
-    Scan orchestrator (CronJob) ──► Job Trivy / kube-bench / DB trong workload ──► DefectDojo
+    Scan orchestrator (CronJob) ──► Job Trivy / kube-bench trong workload ──► DefectDojo
     Falcosidekick (workload) ──► Loki
     DefectDojo DB + Loki ──► Grafana
 
@@ -61,7 +60,7 @@ bash scripts/install-deps.sh                                     # chạy lại:
 | Nhóm | Script cài / làm | Dùng ở |
 |---|---|---|
 | Gói apt | `git make jq curl ca-certificates gnupg coreutils gawk sed tar gzip gettext-base rsync util-linux e2fsprogs` | `envsubst` (gói `gettext-base`) cho values Grafana, `rsync` cho 0.4, `jq` cho API DefectDojo, `make` cho Guide 2 |
-| Docker | `docker.io` + plugin `docker compose`, bật service, thêm user vào nhóm `docker`; ghi `data-root` vào `/etc/docker/daemon.json` (merge, giữ key khác) khi có `DOCKER_DATA_ROOT` | kind, CAPD, `pg-target` |
+| Docker | `docker.io` + plugin `docker compose`, bật service, thêm user vào nhóm `docker`; ghi `data-root` vào `/etc/docker/daemon.json` (merge, giữ key khác) khi có `DOCKER_DATA_ROOT` | kind, CAPD |
 | Kubernetes CLI | `kubectl` (stable), `kind` (latest), `helm` (script chính thức), `clusterctl` `v1.14.0` vào `/usr/local/bin` | Bước 1 trở đi |
 | sysctl | `fs.inotify.max_user_watches=524288`, `max_user_instances=512` vào `/etc/sysctl.d/99-kind.conf` | nhiều node kind/CAPD trên 1 host |
 | Tùy chọn | `WITH_LINT=1` thêm `shellcheck yamllint` | `make lint` |
@@ -134,7 +133,6 @@ Nếu ra `ClusterResourceSet=false`: `kubectl -n capi-system edit deploy capi-co
 ```bash
 cat > ~/vdt/env.sh <<'EOF'
 export ADMIN_NODE_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' kind-control-plane)
-export PG_TARGET_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' pg-target 2>/dev/null)
 export DOJO_URL=http://$ADMIN_NODE_IP:31080
 export LOKI_URL=http://$ADMIN_NODE_IP:31100
 export CLUSTER=${CLUSTER:-capi-quickstart}                 # workload đang thao tác; đổi: CLUSTER=team-a source env.sh
@@ -150,7 +148,7 @@ source ~/vdt/env.sh
 
 ## Bước 2 – DefectDojo (gỡ bản cũ, cài lại sạch)
 
-Thiết kế truy cập: DefectDojo chạy NodePort **31080** trên node kind. Không phụ thuộc `extraPortMappings` hay port-forward: các lệnh trên VM dùng `http://<IP node kind>:31080`, còn laptop mở browser qua **SSH tunnel** (xem Bước 7). PVC nằm trong node kind nên nằm trong Docker data-root (trên SSD nếu đã làm 0.2).
+Thiết kế truy cập: DefectDojo chạy NodePort **31080** trên node kind. Không phụ thuộc `extraPortMappings` hay port-forward: các lệnh trên VM dùng `http://<IP node kind>:31080`, còn laptop mở browser qua **SSH tunnel** (xem Bước 6). PVC nằm trong node kind nên nằm trong Docker data-root (trên SSD nếu đã làm 0.2).
 
 **a) Gỡ bản cũ**
 
@@ -268,7 +266,7 @@ export DOJO_URL=http://$ADMIN_NODE_IP:31080
 curl -s -o /dev/null -w "%{http_code}\n" $DOJO_URL/login      # 200 (hoặc 302)
 ```
 
-**d) Truy cập từ laptop**: mở SSH tunnel theo Bước 7, rồi vào `http://127.0.0.1:18080`, đăng nhập `admin` với mật khẩu ở mục e).
+**d) Truy cập từ laptop**: mở SSH tunnel theo Bước 6, rồi vào `http://127.0.0.1:18080`, đăng nhập `admin` với mật khẩu ở mục e).
 
 **e) Mật khẩu admin và API key**
 
@@ -297,7 +295,7 @@ Nếu lỗi:
 - `502/503`: pod django chưa Ready, đợi thêm (`kubectl -n defectdojo get pods`).
 - Token rỗng hoặc `null`: thiếu `jq` hoặc phản hồi không phải JSON.
 
-Các bước sau dùng `$DOJO_URL` và `$DOJO_API_KEY` (orchestrator ở Bước 6 và `make scan` ở Guide 2). `env.sh` đã đặt `DOJO_URL`; `DOJO_API_KEY` cần export lại mỗi terminal mới.
+Các bước sau dùng `$DOJO_URL` và `$DOJO_API_KEY` (orchestrator ở Bước 5 và `make scan` ở Guide 2). `env.sh` đã đặt `DOJO_URL`; `DOJO_API_KEY` cần export lại mỗi terminal mới.
 
 ---
 
@@ -365,24 +363,13 @@ EOF
 helm install grafana grafana/grafana -n monitoring --create-namespace -f grafana-values.yaml
 ```
 
-Truy cập qua SSH tunnel (xem Bước 7): `http://localhost:3000` (user `admin`). Kiểm tra Connections → Data sources → *Save & test* cả hai datasource.
+Truy cập qua SSH tunnel (xem Bước 6): `http://localhost:3000` (user `admin`). Kiểm tra Connections → Data sources → *Save & test* cả hai datasource.
 
 ---
 
-## Bước 5 – PostgreSQL target
+## Bước 5 – Scan orchestrator (đa cluster)
 
-Nằm ngoài mọi cluster, cùng Docker network `kind` để Job DB scan trong workload truy cập được. Cố ý dùng bản cũ, không bật SSL để có finding.
-
-```bash
-docker run -d --name pg-target --network kind -e POSTGRES_PASSWORD=poc-weak-pass postgres:12
-source ~/vdt/env.sh && echo $PG_TARGET_IP
-```
-
----
-
-## Bước 6 – Scan orchestrator (đa cluster)
-
-Orchestrator là CronJob ở admin. Mỗi lần chạy, nó **tự liệt kê mọi workload cluster có nhãn `security-baseline=enabled`**, lấy kubeconfig từ secret `<cluster>-kubeconfig` do CAPI tạo, rồi chạy `run-scans.sh` (Trivy, kube-bench, DB scan) và reimport vào DefectDojo, mỗi cluster là một Product. Workload mới cấp phát được scan ở lần chạy kế tiếp mà không cần sửa gì.
+Orchestrator là CronJob ở admin. Mỗi lần chạy, nó **tự liệt kê mọi workload cluster có nhãn `security-baseline=enabled`**, lấy kubeconfig từ secret `<cluster>-kubeconfig` do CAPI tạo, rồi chạy `run-scans.sh` (Trivy, kube-bench) và reimport vào DefectDojo, mỗi cluster là một Product. Workload mới cấp phát được scan ở lần chạy kế tiếp mà không cần sửa gì.
 
 Script scan (`run-scans.sh` và template Job) thuộc phần workload nên nằm ở Guide 2. Guide 2 nạp chúng vào ConfigMap `scan-orchestrator/scan-scripts` khi chạy `make addons`. Vì vậy CronJob ở đây tạo với `suspend: true`; Guide 2 (mục 2.3) bật nó lên.
 
@@ -393,13 +380,11 @@ source ~/vdt/env.sh
 kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n scan-orchestrator create secret generic dojo-api --from-literal=token="$DOJO_API_KEY" \
   --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n scan-orchestrator create secret generic pg-target --from-literal=password=poc-weak-pass \
-  --dry-run=client -o yaml | kubectl apply -f -
 # dọn bản orchestrator 1 cluster cũ (nếu từng làm theo guide v2)
 kubectl -n scan-orchestrator delete secret workload-kubeconfig --ignore-not-found
 kubectl -n scan-orchestrator delete configmap orchestrator-script --ignore-not-found
 
-cat <<'EOF' | sed "s|__PG_TARGET_IP__|${PG_TARGET_IP}|" | kubectl apply -f -
+cat <<'EOF' | kubectl apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: orchestrator, namespace: scan-orchestrator}
@@ -455,11 +440,8 @@ spec:
               exit $rc
             env:
             - {name: DOJO_URL, value: "http://defectdojo-django.defectdojo.svc.cluster.local"}
-            - {name: PG_TARGET_IP, value: "__PG_TARGET_IP__"}
             - name: DOJO_API_KEY
               valueFrom: {secretKeyRef: {name: dojo-api, key: token}}
-            - name: PG_TARGET_PASSWORD
-              valueFrom: {secretKeyRef: {name: pg-target, key: password}}
             volumeMounts:
             - {name: scripts, mountPath: /scripts}
           volumes:
@@ -477,7 +459,7 @@ Ghi chú:
 
 ---
 
-## Bước 7 – Truy cập UI từ laptop (SSH tunnel)
+## Bước 6 – Truy cập UI từ laptop (SSH tunnel)
 
 Các NodePort (DefectDojo 31080, Grafana 32000, Loki 31100) nằm trên IP container của node kind, chỉ đi được từ trong VM. Chạy trên **laptop**, giữ cửa sổ mở:
 
@@ -497,7 +479,7 @@ ssh -N -o ExitOnForwardFailure=yes \
 
 ---
 
-## Bước 8 – Grafana dashboard tổng hợp
+## Bước 7 – Grafana dashboard tổng hợp
 
 Dashboards → New → Add visualization. Màu severity: Critical `#E02F44`, High `#FF780A`, Medium `#FAAD14`, Low `#56A64B`.
 
@@ -545,7 +527,7 @@ Mỗi workload là một Product trong DefectDojo (tên = tên cluster), nên pa
 
 ---
 
-## Bước 9 – Kiểm tra admin và bàn giao cho Guide 2
+## Bước 8 – Kiểm tra admin và bàn giao cho Guide 2
 
 ```bash
 source ~/vdt/env.sh
@@ -554,7 +536,7 @@ curl -s -o /dev/null -w "DefectDojo %{http_code}\n" $DOJO_URL/login       # 200/
 curl -s $LOKI_URL/loki/api/v1/labels | jq -r .status                      # success
 kubectl -n monitoring get pods                                            # grafana Running
 kubectl -n scan-orchestrator get cronjob scan-orchestrator                # tồn tại, SUSPEND=True
-echo "ADMIN_NODE_IP=$ADMIN_NODE_IP PG_TARGET_IP=$PG_TARGET_IP DOJO_API_KEY=${DOJO_API_KEY:0:6}..."
+echo "ADMIN_NODE_IP=$ADMIN_NODE_IP DOJO_API_KEY=${DOJO_API_KEY:0:6}..."
 ```
 
 | Guide 2 cần                                 | Lấy từ | Dùng vào                                       |
@@ -562,8 +544,7 @@ echo "ADMIN_NODE_IP=$ADMIN_NODE_IP PG_TARGET_IP=$PG_TARGET_IP DOJO_API_KEY=${DOJ
 | CAAPH + ClusterResourceSet                  | Bước 1 | Tự cài tool khi cấp phát workload              |
 | `LOKI_URL` = `http://<ADMIN_NODE_IP>:31100` | Bước 3 | Falcosidekick (điền tự động bởi `make addons`) |
 | `DOJO_URL`, `DOJO_API_KEY`                  | Bước 2 | `make scan`; CronJob đọc secret `dojo-api`     |
-| `PG_TARGET_IP`                              | Bước 5 | DB scan                                        |
-| CronJob `scan-orchestrator` (đang suspend)  | Bước 6 | Guide 2 bật lên                                |
+| CronJob `scan-orchestrator` (đang suspend)  | Bước 5 | Guide 2 bật lên                                |
 
 ---
 
@@ -573,17 +554,16 @@ echo "ADMIN_NODE_IP=$ADMIN_NODE_IP PG_TARGET_IP=$PG_TARGET_IP DOJO_API_KEY=${DOJ
 # Dọn hoàn toàn (khuyến nghị, đúng tài liệu CAPI): xóa object cluster, KHÔNG xóa bằng file yaml
 kubectl delete cluster --all -n default
 kind delete cluster
-docker rm -f pg-target
 
 # Tạm dừng: chỉ dừng container của kind/CAPD, không đụng container khác
-docker stop $(docker ps -q --filter "label=io.x-k8s.kind.cluster") pg-target
+docker stop $(docker ps -q --filter "label=io.x-k8s.kind.cluster")
 # Tiếp tục: bật admin trước, workload sau, rồi nạp lại IP
-docker start kind-control-plane pg-target
+docker start kind-control-plane
 sleep 30 && docker start $(docker ps -aq --filter "label=io.x-k8s.kind.cluster" --filter "status=exited")
 source ~/vdt/env.sh
 ```
 
-Sau khi resume, IP container có thể đổi. Nếu `ADMIN_NODE_IP` đổi: chạy lại `make addons` (Guide 2), CAAPH tự cập nhật địa chỉ Loki cho Falcosidekick ở mọi workload. Nếu `PG_TARGET_IP` đổi: chạy lại phần `kubectl apply` của Bước 6.
+Sau khi resume, IP container có thể đổi. Nếu `ADMIN_NODE_IP` đổi: chạy lại `make addons` (Guide 2), CAAPH tự cập nhật địa chỉ Loki cho Falcosidekick ở mọi workload.
 
 ---
 

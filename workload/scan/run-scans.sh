@@ -3,7 +3,7 @@
 # Chạy trong workload: Trivy (vuln + secret) cho image đang chạy, kube-bench (CIS, node), DB scan,
 # rồi reimport vào DefectDojo (product = tên cluster). Dùng chung cho:
 #   - scripts/scan-now.sh (chạy tay trên VM)
-#   - CronJob scan-orchestrator ở admin (Guide 1, Bước 6), script được mount từ ConfigMap scan-scripts
+#   - CronJob scan-orchestrator ở admin (Guide 1, Bước 5), script được mount từ ConfigMap scan-scripts
 # Biến môi trường: DOJO_URL, DOJO_API_KEY (bắt buộc); PG_TARGET_IP, PG_TARGET_PASSWORD, SCAN_NAMESPACES (tùy chọn)
 set -euo pipefail
 WKCFG="${1:?kubeconfig}"; CLUSTER="${2:?tên cluster}"
