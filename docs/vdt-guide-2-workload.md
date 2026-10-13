@@ -25,7 +25,7 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
     HelmChartProxy vdt-kyverno ────────┼──────────────────────────► Kyverno
     ClusterResourceSet vdt-security-baseline ─────────────────────► namespace, NetworkPolicy, ValidatingPolicy
     ClusterResourceSet vdt-lab-target ────────────────────────────► vulnerable-workload (mục tiêu lab)
-    CronJob scan-orchestrator ── mỗi 6h liệt kê cluster có nhãn ──► Job Trivy / kube-bench / DB ──► DefectDojo
+    CronJob scan-orchestrator ── mỗi 6h liệt kê cluster có nhãn ──► Job Trivy / kube-bench ──► DefectDojo
 
 | Nhãn trên đối tượng `Cluster` | Kích hoạt                                                                                                |
 |-------------------------------|----------------------------------------------------------------------------------------------------------|
