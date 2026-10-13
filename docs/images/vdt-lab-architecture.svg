@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" role="img" aria-label="Sơ đồ lab VDT: laptop, GitHub Actions; VM Ubuntu chạy admin cluster kind (CAPI, CAPD, cert-manager, CAAPH, ClusterResourceSet, scan orchestrator, DefectDojo, Loki, Grafana) và workload cluster capi-quickstart (Calico, Kyverno, Trivy, kube-bench, Falco, Falcosidekick, Falco-Talon).">
+  <style>
+svg {
+  --bg: #f6f7f9; --fg: #1b2230; --muted: #5a6577; --line: #b9c1cd; --panel: #ffffff;
+  --frame-admin: #eef2f8; --frame-work: #f1f5f2;
+  --policy: #0f8a5f; --policy-bg: #e3f4ec;
+  --runtime: #b8630a; --runtime-bg: #fbf0e2;
+  --scan: #2a62c9; --scan-bg: #e6eefb;
+  
+  --mono: ui-monospace, Consolas, monospace;
+ font-family: "Segoe UI", -apple-system, Helvetica, Arial, sans-serif; }
+@media (prefers-color-scheme: dark) { svg {
+  --bg: #12161d; --fg: #e3e8f0; --muted: #98a3b5; --line: #3d4757; --panel: #1a2029;
+  --frame-admin: #161c26; --frame-work: #151c19;
+  --policy: #3ccf95; --policy-bg: #12301f;
+  --runtime: #f0a050; --runtime-bg: #33230f;
+  --scan: #7aa7ff; --scan-bg: #16233d; color-scheme: dark } }
+.bg { fill: var(--bg); }
+/* SVG roles */
+.vm { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.fa { fill: var(--frame-admin); stroke: var(--line); stroke-width: 1.2; }
+.fw { fill: var(--frame-work); stroke: var(--line); stroke-width: 1.2; }
+.bx { fill: var(--panel); stroke: var(--line); }
+.bx-p { fill: var(--policy-bg); stroke: var(--policy); stroke-width: 1.6; }
+.bx-r { fill: var(--runtime-bg); stroke: var(--runtime); }
+.bx-s { fill: var(--scan-bg); stroke: var(--scan); }
+.sub { fill: var(--panel); stroke: var(--line); stroke-dasharray: 3 3; }
+.sub-p { fill: var(--panel); stroke: var(--policy); }
+.ns { fill: none; stroke: var(--line); stroke-dasharray: 5 4; }
+.badge { fill: var(--policy); }
+.badge-t { fill: var(--bg); font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+text { fill: var(--fg); font-size: 12px; }
+.h { font-size: 15px; font-weight: 600; }
+.ht { font-size: 13px; font-weight: 600; }
+.m { fill: var(--muted); font-size: 11px; }
+.mono { font-family: var(--mono); font-size: 11.5px; }
+.tp { fill: var(--policy); } .tr { fill: var(--runtime); } .ts { fill: var(--scan); }
+.a { fill: none; stroke-width: 1.6; }
+.a-g { stroke: var(--fg); } .a-p { stroke: var(--policy); } .a-r { stroke: var(--runtime); } .a-s { stroke: var(--scan); }
+.a-d { stroke-dasharray: 5 4; }
+.mk-g { fill: var(--fg); } .mk-p { fill: var(--policy); } .mk-r { fill: var(--runtime); } .mk-s { fill: var(--scan); }
+
+.chip { fill: var(--panel); stroke: var(--line); }
+.c { font-size: 13px; font-weight: 500; text-anchor: middle; }
+.lb { fill: var(--muted); font-size: 12px; }
+</style>
+  <rect class="bg" x="0" y="0" width="1200" height="690"/>
+  <defs>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-g" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-p" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-r" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-s" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <rect class="bx" x="10" y="10" width="180" height="44" rx="4"/><text class="c" x="100" y="36.5">Laptop</text>
+  <rect class="bx" x="1010" y="10" width="180" height="44" rx="4"/><text class="c" x="1100" y="36.5">GitHub Actions</text>
+
+  <rect class="vm" x="10" y="80" width="1180" height="600" rx="6"/>
+  <text class="h" x="26" y="104">VM Ubuntu · Docker</text>
+  <rect class="bx" x="40" y="114" width="1120" height="40" rx="4"/>
+  <text class="mono" x="600" y="138" text-anchor="middle">docker · kind · kubectl · helm · clusterctl · make · kyverno CLI</text>
+
+  <rect class="fa" x="40" y="180" width="520" height="474" rx="6"/>
+  <text class="h" x="60" y="206">Admin cluster · kind</text>
+  <rect class="bx" x="60" y="220" width="480" height="110" rx="4"/>
+  <rect class="chip" x="76" y="234" width="140" height="34" rx="4"/><text class="c" x="146" y="255.5">CAPI</text><rect class="chip" x="230" y="234" width="140" height="34" rx="4"/><text class="c" x="300" y="255.5">CAPD</text><rect class="chip" x="384" y="234" width="140" height="34" rx="4"/><text class="c" x="454" y="255.5">cert-manager</text>
+  <rect class="chip" x="76" y="282" width="140" height="34" rx="4"/><text class="c" x="146" y="303.5">CAAPH</text><rect class="chip" x="230" y="282" width="294" height="34" rx="4"/><text class="c" x="377" y="303.5">ClusterResourceSet</text>
+  <rect class="bx-s" x="60" y="350" width="480" height="56" rx="4"/><text class="c" x="300" y="382.5">Scan orchestrator</text>
+  <rect class="bx-s" x="60" y="426" width="480" height="56" rx="4"/><text class="c" x="300" y="458.5">DefectDojo</text>
+  <rect class="bx-r" x="300" y="502" width="240" height="56" rx="4"/><text class="c" x="420" y="534.5">Loki</text>
+  <rect class="bx" x="60" y="578" width="480" height="56" rx="4"/><text class="c" x="300" y="610.5">Grafana</text>
+
+  <rect class="fw" x="640" y="180" width="520" height="474" rx="6"/>
+  <text class="h" x="660" y="206">Workload · capi-quickstart</text>
+  <rect class="chip" x="1070" y="188" width="74" height="28" rx="4"/><text class="c" x="1107" y="206.5">Calico</text>
+  <rect class="bx-p" x="660" y="220" width="230" height="90" rx="4"/>
+  <text class="lb" x="676" y="240">ns kyverno</text>
+  <rect class="sub-p" x="676" y="252" width="198" height="34" rx="4"/><text class="c" x="775" y="273.5">Kyverno</text>
+  <rect class="bx" x="910" y="220" width="230" height="90" rx="4"/>
+  <text class="c" x="1025" y="270">ns policy-lab</text>
+
+  <rect class="bx-s" x="660" y="330" width="480" height="66" rx="4"/>
+  <text class="lb" x="676" y="368">ns security-scan</text>
+  <rect class="chip" x="806" y="346" width="150" height="34" rx="4"/><text class="c" x="881" y="367.5">Trivy</text><rect class="chip" x="972" y="346" width="152" height="34" rx="4"/><text class="c" x="1048" y="367.5">kube-bench</text>
+
+  <rect class="ns" x="660" y="416" width="480" height="142" rx="4"/>
+  <text class="lb" x="676" y="436">ns falco</text>
+  <rect class="bx-r" x="676" y="448" width="200" height="36" rx="4"/><text class="c" x="776" y="470.5">Falco</text>
+  <rect class="bx-r" x="676" y="512" width="200" height="36" rx="4"/><text class="c" x="776" y="534.5">Falcosidekick</text>
+  <rect class="bx-r" x="920" y="512" width="204" height="36" rx="4"/><text class="c" x="1022" y="534.5">Falco-Talon</text>
+
+  <rect class="bx" x="660" y="574" width="320" height="60" rx="4"/>
+  <text class="c" x="820" y="608">ns vuln-lab</text>
+  <rect class="bx" x="1000" y="574" width="140" height="60" rx="4"/>
+  <text class="c" x="1070" y="608">ns default</text>
+
+  <path class="a a-g a-d" d="M25 54 V454 H58" marker-end="url(#ag)"/>
+  <path class="a a-g a-d" d="M25 454 V606 H58" marker-end="url(#ag)"/>
+  <path class="a a-g" d="M500 154 V218" marker-end="url(#ag)"/>
+  <path class="a a-g" d="M540 275 H638" marker-end="url(#ag)"/>
+  <path class="a a-p" d="M880 154 V250" marker-end="url(#ap)"/>
+  <path class="a a-p" d="M874 269 H908" marker-end="url(#ap)"/>
+  <path class="a a-s" d="M540 362 H658" marker-end="url(#as)"/>
+  <path class="a a-s" d="M660 390 H542" marker-end="url(#as)"/>
+  <path class="a a-s" d="M300 406 V424" marker-end="url(#as)"/>
+  <path class="a a-r" d="M776 484 V510" marker-end="url(#ar)"/>
+  <path class="a a-r" d="M876 530 H918" marker-end="url(#ar)"/>
+  <path class="a a-r" d="M676 530 H542" marker-end="url(#ar)"/>
+  <path class="a a-r" d="M950 548 V572" marker-end="url(#ar)"/>
+  <path class="a a-g a-d" d="M420 578 V560" marker-end="url(#ag)"/>
+  <path class="a a-g a-d" d="M150 578 V484" marker-end="url(#ag)"/>
+</svg>
