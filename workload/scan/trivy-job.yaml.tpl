@@ -4,7 +4,7 @@ metadata:
   name: __JOB__
   namespace: __NS__
   labels:
-    app.kubernetes.io/part-of: vdt-scan
+    app.kubernetes.io/part-of: secplat-scan
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600

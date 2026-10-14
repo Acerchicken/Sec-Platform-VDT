@@ -22,7 +22,7 @@ wait_for "Kyverno admission controller" "$T" "kw -n kyverno rollout status deplo
 policy_ready() {
   [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
-for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
+for p in secplat-disallow-privileged secplat-disallow-latest-tag secplat-require-nonroot; do
   wait_for "ValidatingPolicy $p Ready" "$T" "policy_ready $p"
 done
 
