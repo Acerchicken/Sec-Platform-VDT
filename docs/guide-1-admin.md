@@ -32,7 +32,7 @@ Làm **trước khi tạo bất kỳ cụm nào**. Toàn bộ node kind/CAPD, im
 ```bash
 sudo apt-get update && sudo apt-get install -y git
 mkdir -p ~/secplat && cd ~/secplat
-git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform   # lần sau: cd sec-platform && git pull
+git clone https://github.com/Acerchicken/Security-Platform-for-K8s.git sec-platform   # lần sau: cd sec-platform && git pull
 ```
 
 **0.2 (Tùy chọn) Format + mount SSD**: chỉ khi VM có ổ/phân vùng SSD riêng; VM chạy trên HDD hoặc chỉ có 1 ổ thì bỏ qua 0.2 và 0.4. Kiểm tra kỹ tên thiết bị, `mkfs` XÓA sạch ổ.

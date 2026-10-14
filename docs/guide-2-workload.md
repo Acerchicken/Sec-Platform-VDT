@@ -37,7 +37,7 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 
 ## 1. Chuẩn bị repo (một lần)
 
-Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
+Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Security-Platform-for-K8s) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
 
     sec-platform/
     ├── Makefile                         # make deps | preflight | addons | provision | verify | scan | test-* | e2e
@@ -61,7 +61,7 @@ Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Sec-Pla
 ```bash
 sudo apt-get update && sudo apt-get install -y git           # chỉ cần git để clone; phần còn lại do install-deps.sh cài
 mkdir -p ~/secplat && cd ~/secplat
-git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform   # lần sau: cd sec-platform && git pull
+git clone https://github.com/Acerchicken/Security-Platform-for-K8s.git sec-platform   # lần sau: cd sec-platform && git pull
 cd sec-platform
 chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi clone mất quyền thực thi
 ```
