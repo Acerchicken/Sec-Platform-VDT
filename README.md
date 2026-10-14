@@ -1,10 +1,10 @@
-# VDT Phase 2 – Security Platform: manifests
+# Security Platform: manifests
 
-Matches **Guide 1/2 (Admin cluster)** and **Guide 2/2 (Workload cluster, auto-installed at provisioning)**, see [`docs/vdt-guide-1-admin.md`](docs/vdt-guide-1-admin.md) and [`docs/vdt-guide-2-workload.md`](docs/vdt-guide-2-workload.md).
+Matches **Guide 1/2 (Admin cluster)** and **Guide 2/2 (Workload cluster, auto-installed at provisioning)**, see [`docs/guide-1-admin.md`](docs/guide-1-admin.md) and [`docs/guide-2-workload.md`](docs/guide-2-workload.md).
 The admin cluster (kind + CAPI + CAPD + CAAPH) is declared once; any workload cluster labeled `security-baseline=enabled`
 automatically gets Falco/Sidekick/Talon, Kyverno, namespaces, NetworkPolicy and policies. No more manual `helm install` into workloads.
 
-![VDT lab architecture](docs/images/vdt-lab-architecture.svg)
+![Lab architecture](docs/images/lab-architecture.svg)
 
 ```
 01-admin-cluster/kind-config.yaml            Admin: kind
@@ -17,7 +17,6 @@ workload/scan/                               run-scans.sh + Job templates (loade
 workload/tests/                              verify, RT-1..3, PE-1..5, e2e, fixtures
 scripts/                                     install-deps.sh, preflight.sh, lib.sh, render.sh, provision-cluster.sh, scan-now.sh
 Makefile, env.sh, env.example                Entry points: make deps | preflight | addons | provision | verify | scan | test | e2e
-.github/workflows/baseline.yml               CI (lint on GitHub; apply/test/e2e on the self-hosted runner vdt-vm)
 docs/                                        Guide 1/2 (Admin) and Guide 2/2 (Workload), in Vietnamese
 ```
 
@@ -31,7 +30,7 @@ An Ubuntu/Debian VM with sudo. On a clean VM, `scripts/install-deps.sh` installs
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-mkdir -p ~/vdt && cd ~/vdt && git clone https://github.com/Acerchicken/Sec-Platform-VDT.git && cd Sec-Platform-VDT
+mkdir -p ~/secplat && cd ~/secplat && git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform && cd sec-platform
 bash scripts/install-deps.sh                                    # re-login afterwards for the docker group
 # optional, only with a dedicated SSD: mount it at /mnt/ssd (Guide 1, Step 0.2), then instead:
 # DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh

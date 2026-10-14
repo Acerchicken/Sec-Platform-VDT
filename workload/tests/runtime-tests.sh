@@ -44,7 +44,7 @@ egress_ok() { kw -n "$NS" exec "$P2" -- timeout 5 bash -c 'exec 3<>/dev/tcp/kube
 NET_CHECK=1
 egress_ok >/dev/null 2>&1 || { warn "RT-2: pod chưa kết nối được API trước khi test, bỏ qua kiểm tra cắt mạng"; NET_CHECK=0; }
 kw -n "$NS" exec "$P2" -- sh -c 'cp /bin/sleep /tmp/xmrig && /tmp/xmrig 1' >/dev/null 2>&1 || true
-if poll 60 falco_has "VDT Miner Binary Executed" "$P2"; then ok "RT-2 Falco phát hiện (custom rule VDT Miner Binary Executed)"
+if poll 60 falco_has "Miner Binary Executed" "$P2"; then ok "RT-2 Falco phát hiện (custom rule Miner Binary Executed)"
 else bad "RT-2 không thấy alert custom rule cho $P2"; fi
 labeled() { [ "$(kw -n "$NS" get pod "$P2" -o jsonpath='{.metadata.labels.quarantine}')" = true ]; }
 if poll 60 labeled; then ok "RT-2 Talon gắn nhãn quarantine=true cho $P2"

@@ -1,4 +1,4 @@
-# VDT Phase 2 – Hướng dẫn 1/2: Admin cluster
+# Security Platform – Hướng dẫn 1/2: Admin cluster
 
 Hướng dẫn này dựng **Admin cluster** (kind + Cluster API) và các dịch vụ trung tâm: DefectDojo, Loki, Grafana, Scan orchestrator. Các giải pháp chạy **bên trong workload cluster** (Trivy, kube-bench, Falco/Talon, Kyverno) và cơ chế tự cài khi cấp phát workload nằm ở **Hướng dẫn 2/2**.
 
@@ -19,7 +19,7 @@ Luồng dữ liệu phía admin:
     Falcosidekick (workload) ──► Loki
     DefectDojo DB + Loki ──► Grafana
 
-Quy ước: mọi lệnh chạy trên VM, thư mục `~/vdt`, `kubectl` mặc định trỏ admin cluster (context `kind-kind`). `kw`/`hw` là kubectl/helm trỏ một workload cluster, định nghĩa trong `env.sh` (Bước 1).
+Quy ước: mọi lệnh chạy trên VM, thư mục `~/secplat`, `kubectl` mặc định trỏ admin cluster (context `kind-kind`). `kw`/`hw` là kubectl/helm trỏ một workload cluster, định nghĩa trong `env.sh` (Bước 1).
 
 ---
 
@@ -31,8 +31,8 @@ Làm **trước khi tạo bất kỳ cụm nào**. Toàn bộ node kind/CAPD, im
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-mkdir -p ~/vdt && cd ~/vdt
-git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
+mkdir -p ~/secplat && cd ~/secplat
+git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform   # lần sau: cd sec-platform && git pull
 ```
 
 **0.2 (Tùy chọn) Format + mount SSD**: chỉ khi VM có ổ/phân vùng SSD riêng; VM chạy trên HDD hoặc chỉ có 1 ổ thì bỏ qua 0.2 và 0.4. Kiểm tra kỹ tên thiết bị, `mkfs` XÓA sạch ổ.
@@ -48,7 +48,7 @@ sudo mount -a && df -h /mnt/ssd
 **0.3 Cài package** bằng `scripts/install-deps.sh` (Ubuntu/Debian, cần sudo). Mặc định Docker giữ data-root `/var/lib/docker`; chỉ khi đã làm 0.2 thì đặt `DOCKER_DATA_ROOT` để Docker cài xong là chạy thẳng trên SSD:
 
 ```bash
-cd ~/vdt/Sec-Platform-VDT
+cd ~/secplat/sec-platform
 bash scripts/install-deps.sh                                     # mặc định (HDD / 1 ổ)
 # hoặc, chỉ khi đã mount SSD ở 0.2:
 # DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh
@@ -88,7 +88,7 @@ Ghi chú: ổ chứa Docker data-root (kể cả SSD nếu dùng) phải là ext
 ## Bước 1 – Admin cluster (kind) + CAPI, CAAPH, ClusterResourceSet
 
 ```bash
-cd ~/vdt
+cd ~/secplat
 clusterctl version          # v1.14.0, đã cài ở Bước 0.3
 
 cat > kind-config.yaml <<'EOF'
@@ -131,17 +131,17 @@ Nếu ra `ClusterResourceSet=false`: `kubectl -n capi-system edit deploy capi-co
 `env.sh` (source lại **mỗi lần** mở terminal mới hoặc sau khi resume Docker, vì IP container có thể đổi):
 
 ```bash
-cat > ~/vdt/env.sh <<'EOF'
+cat > ~/secplat/env.sh <<'EOF'
 export ADMIN_NODE_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' kind-control-plane)
 export DOJO_URL=http://$ADMIN_NODE_IP:31080
 export LOKI_URL=http://$ADMIN_NODE_IP:31100
 export CLUSTER=${CLUSTER:-capi-quickstart}                 # workload đang thao tác; đổi: CLUSTER=team-a source env.sh
-export WORKLOAD_KUBECONFIG="$HOME/vdt/$CLUSTER.kubeconfig"
+export WORKLOAD_KUBECONFIG="$HOME/secplat/$CLUSTER.kubeconfig"
 clusterctl get kubeconfig "$CLUSTER" > "$WORKLOAD_KUBECONFIG" 2>/dev/null || true
 kw() { kubectl --kubeconfig="$WORKLOAD_KUBECONFIG" "$@"; }
 hw() { helm --kubeconfig="$WORKLOAD_KUBECONFIG" "$@"; }
 EOF
-source ~/vdt/env.sh
+source ~/secplat/env.sh
 ```
 
 ---
@@ -162,7 +162,7 @@ kubectl delete ns defectdojo --ignore-not-found --wait=true
 **b) Cài mới**
 
 ```bash
-cd ~/vdt && source env.sh      # cần ADMIN_NODE_IP
+cd ~/secplat && source env.sh      # cần ADMIN_NODE_IP
 
 cat > defectdojo-value.yaml <<'EOV'
 host: localhost
@@ -374,7 +374,7 @@ Orchestrator là CronJob ở admin. Mỗi lần chạy, nó **tự liệt kê m�
 Script scan (`run-scans.sh` và template Job) thuộc phần workload nên nằm ở Guide 2. Guide 2 nạp chúng vào ConfigMap `scan-orchestrator/scan-scripts` khi chạy `make addons`. Vì vậy CronJob ở đây tạo với `suspend: true`; Guide 2 (mục 2.3) bật nó lên.
 
 ```bash
-source ~/vdt/env.sh
+source ~/secplat/env.sh
 : "${DOJO_API_KEY:?export DOJO_API_KEY trước (Bước 2e)}"
 
 kubectl create ns scan-orchestrator --dry-run=client -o yaml | kubectl apply -f -
@@ -464,7 +464,7 @@ Ghi chú:
 Các NodePort (DefectDojo 31080, Grafana 32000, Loki 31100) nằm trên IP container của node kind, chỉ đi được từ trong VM. Chạy trên **laptop**, giữ cửa sổ mở:
 
 ```bash
-# <ADMIN_NODE_IP>: lấy bằng `source ~/vdt/env.sh; echo $ADMIN_NODE_IP` trên VM (thường 172.18.0.x)
+# <ADMIN_NODE_IP>: lấy bằng `source ~/secplat/env.sh; echo $ADMIN_NODE_IP` trên VM (thường 172.18.0.x)
 ssh -N -o ExitOnForwardFailure=yes \
   -L 18080:<ADMIN_NODE_IP>:31080 \
   -L 13000:<ADMIN_NODE_IP>:32000 \
@@ -530,7 +530,7 @@ Mỗi workload là một Product trong DefectDojo (tên = tên cluster), nên pa
 ## Bước 8 – Kiểm tra admin và bàn giao cho Guide 2
 
 ```bash
-source ~/vdt/env.sh
+source ~/secplat/env.sh
 kubectl -n caaph-system get pods                                          # Running
 curl -s -o /dev/null -w "DefectDojo %{http_code}\n" $DOJO_URL/login       # 200/302
 curl -s $LOKI_URL/loki/api/v1/labels | jq -r .status                      # success
@@ -560,7 +560,7 @@ docker stop $(docker ps -q --filter "label=io.x-k8s.kind.cluster")
 # Tiếp tục: bật admin trước, workload sau, rồi nạp lại IP
 docker start kind-control-plane
 sleep 30 && docker start $(docker ps -aq --filter "label=io.x-k8s.kind.cluster" --filter "status=exited")
-source ~/vdt/env.sh
+source ~/secplat/env.sh
 ```
 
 Sau khi resume, IP container có thể đổi. Nếu `ADMIN_NODE_IP` đổi: chạy lại `make addons` (Guide 2), CAAPH tự cập nhật địa chỉ Loki cho Falcosidekick ở mọi workload.

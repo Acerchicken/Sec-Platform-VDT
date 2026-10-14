@@ -1,4 +1,4 @@
-# VDT Phase 2 – Hướng dẫn 2/2: Giải pháp bảo mật trên Workload cluster (tự cài khi cấp phát)
+# Security Platform – Hướng dẫn 2/2: Giải pháp bảo mật trên Workload cluster (tự cài khi cấp phát)
 
 Điều kiện: đã xong **Hướng dẫn 1/2** (admin cluster có CAPI + CAAPH + ClusterResourceSet, DefectDojo, Loki, Grafana, CronJob orchestrator đang suspend).
 
@@ -19,12 +19,12 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
     ─────────────                                                    ────────────────────
     make provision NAME=team-a ─► Cluster (nhãn security-baseline=enabled, cni=calico, lab-target=enabled)
                                        │
-    ClusterResourceSet vdt-calico ─────┼──────────────────────────► Calico (node Ready)
-    HelmChartProxy vdt-falco ──────────┼──────────────────────────► Falco + Falcosidekick ──► Loki (admin)
-    HelmChartProxy vdt-falco-talon ────┼──────────────────────────► Falco-Talon (nhận webhook từ Sidekick)
-    HelmChartProxy vdt-kyverno ────────┼──────────────────────────► Kyverno
-    ClusterResourceSet vdt-security-baseline ─────────────────────► namespace, NetworkPolicy, ValidatingPolicy
-    ClusterResourceSet vdt-lab-target ────────────────────────────► vulnerable-workload (mục tiêu lab)
+    ClusterResourceSet secplat-calico ─────┼──────────────────────────► Calico (node Ready)
+    HelmChartProxy secplat-falco ──────────┼──────────────────────────► Falco + Falcosidekick ──► Loki (admin)
+    HelmChartProxy secplat-falco-talon ────┼──────────────────────────► Falco-Talon (nhận webhook từ Sidekick)
+    HelmChartProxy secplat-kyverno ────────┼──────────────────────────► Kyverno
+    ClusterResourceSet secplat-security-baseline ─────────────────────► namespace, NetworkPolicy, ValidatingPolicy
+    ClusterResourceSet secplat-lab-target ────────────────────────────► vulnerable-workload (mục tiêu lab)
     CronJob scan-orchestrator ── mỗi 6h liệt kê cluster có nhãn ──► Job Trivy / kube-bench ──► DefectDojo
 
 | Nhãn trên đối tượng `Cluster` | Kích hoạt                                                                                                |
@@ -37,9 +37,9 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 
 ## 1. Chuẩn bị repo (một lần)
 
-Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
+Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
 
-    Sec-Platform-VDT/
+    sec-platform/
     ├── Makefile                         # make deps | preflight | addons | provision | verify | scan | test-* | e2e
     ├── env.example                      # copy thành .env nếu cần ghi đè
     ├── scripts/
@@ -56,13 +56,13 @@ Toàn bộ file nằm trong repo GitHub [`Acerchicken/Sec-Platform-VDT`](https:/
     │   └── tests/                       # verify, runtime-tests, policy-tests, e2e, fixtures
     └── .github/workflows/baseline.yml   # CI
 
-Đã làm Guide 1, Bước 0.1 thì repo đã có ở `~/vdt/Sec-Platform-VDT`: chỉ cần `cd ~/vdt/Sec-Platform-VDT && git pull`. VM khác (chưa có repo):
+Đã làm Guide 1, Bước 0.1 thì repo đã có ở `~/secplat/sec-platform`: chỉ cần `cd ~/secplat/sec-platform && git pull`. VM khác (chưa có repo):
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git           # chỉ cần git để clone; phần còn lại do install-deps.sh cài
-mkdir -p ~/vdt && cd ~/vdt
-git clone https://github.com/Acerchicken/Sec-Platform-VDT.git   # lần sau: cd Sec-Platform-VDT && git pull
-cd Sec-Platform-VDT
+mkdir -p ~/secplat && cd ~/secplat
+git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform   # lần sau: cd sec-platform && git pull
+cd sec-platform
 chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi clone mất quyền thực thi
 ```
 
@@ -113,7 +113,7 @@ ADMIN_CONTAINER=kind-control-plane
 
 ```bash
 make addons
-kubectl get helmchartproxies,clusterresourcesets       # vdt-falco, vdt-falco-talon, vdt-kyverno, vdt-calico, vdt-security-baseline, vdt-lab-target
+kubectl get helmchartproxies,clusterresourcesets       # secplat-falco, secplat-falco-talon, secplat-kyverno, secplat-calico, secplat-security-baseline, secplat-lab-target
 ```
 
 `make addons` (`scripts/render.sh`) làm 4 việc, chạy lại bao nhiêu lần cũng được:
@@ -135,7 +135,7 @@ HelmChartProxy là "chart X, values Y, cài vào mọi cluster có nhãn Z". `{{
 apiVersion: addons.cluster.x-k8s.io/v1alpha1
 kind: HelmChartProxy
 metadata:
-  name: vdt-falco
+  name: secplat-falco
 spec:
   clusterSelector:
     matchLabels:
@@ -156,13 +156,13 @@ spec:
       kind: modern_ebpf
     tty: true
     customRules:
-      vdt-rules.yaml: |-
-        - rule: VDT Miner Binary Executed
+      secplat-rules.yaml: |-
+        - rule: Miner Binary Executed
           desc: Simulated crypto-miner binary (named xmrig) executed inside a container (PoC)
           condition: spawned_process and container and proc.name = xmrig
           output: Miner binary executed (proc=%proc.name cmdline=%proc.cmdline pod=%k8s.pod.name ns=%k8s.ns.name image=%container.image.repository)
           priority: CRITICAL
-          tags: [vdt, poc, mitre_execution]
+          tags: [secplat, poc, mitre_execution]
     falcosidekick:
       enabled: true
       webui:
@@ -185,7 +185,7 @@ spec:
 apiVersion: addons.cluster.x-k8s.io/v1alpha1
 kind: HelmChartProxy
 metadata:
-  name: vdt-falco-talon
+  name: secplat-falco-talon
 spec:
   clusterSelector:
     matchLabels:
@@ -231,7 +231,7 @@ spec:
           description: RT-2, chay binary dao coin thi gan nhan quarantine (NetworkPolicy cat mang)
           match:
             rules:
-              - VDT Miner Binary Executed
+              - Miner Binary Executed
             output_fields:
               - k8s.ns.name=vuln-lab
           actions:
@@ -245,7 +245,7 @@ spec:
 apiVersion: addons.cluster.x-k8s.io/v1alpha1
 kind: HelmChartProxy
 metadata:
-  name: vdt-kyverno
+  name: secplat-kyverno
 spec:
   clusterSelector:
     matchLabels:
@@ -272,7 +272,7 @@ spec:
       replicas: 1
 ```
 
-ClusterResourceSet cho manifest thuần. `vdt-security-baseline` dùng `strategy: Reconcile`: sửa file trong `manifests/`, chạy lại `make addons`, thay đổi tự xuống mọi cluster.
+ClusterResourceSet cho manifest thuần. `secplat-security-baseline` dùng `strategy: Reconcile`: sửa file trong `manifests/`, chạy lại `make addons`, thay đổi tự xuống mọi cluster.
 
 `workload/addons/30-crs.yaml`
 
@@ -281,7 +281,7 @@ ClusterResourceSet cho manifest thuần. `vdt-security-baseline` dùng `strategy
 apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet
 metadata:
-  name: vdt-calico
+  name: secplat-calico
 spec:
   strategy: ApplyOnce
   clusterSelector:
@@ -294,7 +294,7 @@ spec:
 apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet
 metadata:
-  name: vdt-security-baseline
+  name: secplat-security-baseline
 spec:
   strategy: Reconcile          # sửa manifest + chạy lại render.sh -> tự đồng bộ xuống mọi cluster
   clusterSelector:
@@ -311,7 +311,7 @@ spec:
 apiVersion: addons.cluster.x-k8s.io/v1beta1
 kind: ClusterResourceSet
 metadata:
-  name: vdt-lab-target
+  name: secplat-lab-target
 spec:
   strategy: ApplyOnce
   clusterSelector:
@@ -412,14 +412,14 @@ make verify CLUSTER=team-a       # chờ và kiểm tra mọi tool đã tự cà
 
 Muốn cluster không có mục tiêu lab: `./scripts/provision-cluster.sh team-b --no-lab`.
 
-Thao tác với cluster vừa tạo từ terminal: `CLUSTER=team-a source ~/vdt/env.sh` rồi dùng `kw`, `hw`.
+Thao tác với cluster vừa tạo từ terminal: `CLUSTER=team-a source ~/secplat/env.sh` rồi dùng `kw`, `hw`.
 
 ### 3.2 Đưa cluster `capi-quickstart` hiện có vào cơ chế tự cài
 
 Cluster này đã có Calico và Falco/Talon cài tay. Gỡ bản cài tay trước để CAAPH quản lý (tránh trùng release), **không** gắn nhãn `cni=calico`:
 
 ```bash
-source ~/vdt/env.sh                  # CLUSTER=capi-quickstart
+source ~/secplat/env.sh                  # CLUSTER=capi-quickstart
 hw uninstall falco-talon -n falco || true
 hw uninstall falco -n falco || true
 kubectl label cluster capi-quickstart security-baseline=enabled lab-target=enabled --overwrite
@@ -540,7 +540,7 @@ metadata:
   name: __JOB__
   namespace: __NS__
   labels:
-    app.kubernetes.io/part-of: vdt-scan
+    app.kubernetes.io/part-of: secplat-scan
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
@@ -562,7 +562,7 @@ metadata:
   name: __JOB__
   namespace: __NS__
   labels:
-    app.kubernetes.io/part-of: vdt-scan
+    app.kubernetes.io/part-of: secplat-scan
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
@@ -594,7 +594,7 @@ spec:
                                                                 └─► Label quarantine=true ─► NetworkPolicy cắt mạng (RT-2)
 
 - **Rule mặc định** `Read sensitive file untrusted` → Talon xoá pod (ReplicaSet tạo lại pod sạch).
-- **Rule tự viết** `VDT Miner Binary Executed` (trong values Falco ở mục 2.2): tiến trình tên `xmrig` chạy trong container → Talon gắn nhãn `quarantine=true`, NetworkPolicy dưới đây cắt mọi kết nối của pod. Pod vẫn còn để điều tra, nhưng không liên lạc được.
+- **Rule tự viết** `Miner Binary Executed` (trong values Falco ở mục 2.2): tiến trình tên `xmrig` chạy trong container → Talon gắn nhãn `quarantine=true`, NetworkPolicy dưới đây cắt mọi kết nối của pod. Pod vẫn còn để điều tra, nhưng không liên lạc được.
 - Rule Talon chỉ áp cho `k8s.ns.name=vuln-lab`. Namespace khác chỉ có alert, không có phản ứng (RT-3 kiểm chứng).
 
 `workload/manifests/20-quarantine-netpol.yaml`
@@ -618,7 +618,7 @@ spec:
 | ID   | Mục tiêu                                      | Thao tác                                                        | Kết quả mong đợi                                                                          | Kiểm chứng                                                                          |
 |------|-----------------------------------------------|-----------------------------------------------------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
 | RT-1 | Phát hiện + chặn đánh cắp thông tin đăng nhập | `exec` vào pod `vuln-lab`, `cat /etc/shadow`                    | Alert `Read sensitive file untrusted`; Talon terminate pod; pod mới thay thế              | Log Falco có rule + tên pod; pod cũ biến mất; pod mới Running                       |
-| RT-2 | Phát hiện + cô lập tiến trình đào coin        | `cp /bin/sleep /tmp/xmrig && /tmp/xmrig 1` trong pod `vuln-lab` | Alert `VDT Miner Binary Executed` (CRITICAL); pod gắn `quarantine=true`; mất kết nối mạng | Nhãn pod; kết nối tới `kubernetes.default.svc:443` từ pod thất bại sau khi gắn nhãn |
+| RT-2 | Phát hiện + cô lập tiến trình đào coin        | `cp /bin/sleep /tmp/xmrig && /tmp/xmrig 1` trong pod `vuln-lab` | Alert `Miner Binary Executed` (CRITICAL); pod gắn `quarantine=true`; mất kết nối mạng | Nhãn pod; kết nối tới `kubernetes.default.svc:443` từ pod thất bại sau khi gắn nhãn |
 | RT-3 | Đối chứng: phản ứng đúng phạm vi              | Tạo pod `nginx:1.27` ở `default`, `cat /etc/shadow`             | Có alert, **không** bị terminate                                                          | Log Falco có alert; pod vẫn Running sau 15s                                         |
 
 Chạy tự động (mỗi mục in PASS/FAIL, exit code khác 0 nếu có FAIL):
@@ -630,7 +630,7 @@ make test-runtime CLUSTER=team-a
 Chạy tay để demo:
 
 ```bash
-CLUSTER=team-a source ~/vdt/env.sh
+CLUSTER=team-a source ~/secplat/env.sh
 kw -n vuln-lab get pods -w &                                              # theo dõi pod
 P=$(kw -n vuln-lab get pod -l app=vulnerable-workload -o jsonpath='{.items[0].metadata.name}')
 
@@ -664,9 +664,9 @@ Kyverno là admission webhook: mọi Pod (và Deployment/Job… nhờ autogen) �
 
 | ValidatingPolicy          | Chặn                                               | Lý do                                        |
 |---------------------------|----------------------------------------------------|----------------------------------------------|
-| `vdt-disallow-privileged` | Container `privileged: true` (kể cả initContainer) | Privileged = gần như root trên node          |
-| `vdt-disallow-latest-tag` | Image không có tag hoặc tag `:latest`              | Không truy vết/scan được phiên bản thực chạy |
-| `vdt-require-nonroot`     | Pod thiếu `securityContext.runAsNonRoot: true`     | Giảm tác động khi container bị chiếm         |
+| `secplat-disallow-privileged` | Container `privileged: true` (kể cả initContainer) | Privileged = gần như root trên node          |
+| `secplat-disallow-latest-tag` | Image không có tag hoặc tag `:latest`              | Không truy vết/scan được phiên bản thực chạy |
+| `secplat-require-nonroot`     | Pod thiếu `securityContext.runAsNonRoot: true`     | Giảm tác động khi container bị chiếm         |
 
 Phạm vi: chỉ namespace có nhãn `policy=enforce` (mặc định `policy-lab`). `vuln-lab` cố ý không gắn nhãn để mục tiêu lab vẫn chạy được cho scan và kịch bản runtime. Muốn áp cho namespace ứng dụng: `kw label ns <ns> policy=enforce`.
 
@@ -680,7 +680,7 @@ Phạm vi: chỉ namespace có nhãn `policy=enforce` (mặc định `policy-lab
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
-  name: vdt-disallow-privileged
+  name: secplat-disallow-privileged
   annotations:
     policies.kyverno.io/title: Disallow privileged containers
     policies.kyverno.io/severity: high
@@ -703,12 +703,12 @@ spec:
   validations:
     - expression: >-
         variables.allContainers.all(c, c.?securityContext.?privileged.orValue(false) == false)
-      message: "[vdt-disallow-privileged] Privileged containers are not allowed."
+      message: "[secplat-disallow-privileged] Privileged containers are not allowed."
 ---
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
-  name: vdt-disallow-latest-tag
+  name: secplat-disallow-latest-tag
   annotations:
     policies.kyverno.io/title: Require explicit, non-latest image tag
     policies.kyverno.io/severity: medium
@@ -729,15 +729,15 @@ spec:
     # Có tag = có ':' sau dấu '/' cuối (không nhầm cổng registry, vd. registry:5000/app); digest '@sha256:' cũng được
     - expression: >-
         object.spec.containers.all(c, c.image.lastIndexOf(':') > c.image.lastIndexOf('/'))
-      message: "[vdt-disallow-latest-tag] Image must have an explicit tag."
+      message: "[secplat-disallow-latest-tag] Image must have an explicit tag."
     - expression: >-
         object.spec.containers.all(c, !c.image.endsWith(':latest'))
-      message: "[vdt-disallow-latest-tag] Image tag ':latest' is not allowed."
+      message: "[secplat-disallow-latest-tag] Image tag ':latest' is not allowed."
 ---
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
-  name: vdt-require-nonroot
+  name: secplat-require-nonroot
   annotations:
     policies.kyverno.io/title: Require runAsNonRoot
     policies.kyverno.io/severity: high
@@ -757,16 +757,16 @@ spec:
   validations:
     - expression: >-
         object.spec.?securityContext.?runAsNonRoot.orValue(false) == true
-      message: "[vdt-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."
+      message: "[secplat-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."
 ```
 
 ### Kịch bản test
 
 | ID   | Thao tác (namespace `policy-lab`)                       | Kết quả mong đợi  | Kiểm chứng                                   |
 |------|---------------------------------------------------------|-------------------|----------------------------------------------|
-| PE-1 | Apply Pod có container privileged                       | Bị từ chối        | Thông báo lỗi chứa `vdt-disallow-privileged` |
-| PE-2 | Apply Pod dùng `busybox:latest`                         | Bị từ chối        | Lỗi chứa `vdt-disallow-latest-tag`           |
-| PE-3 | Apply Pod không khai báo securityContext (chạy root)    | Bị từ chối        | Lỗi chứa `vdt-require-nonroot`               |
+| PE-1 | Apply Pod có container privileged                       | Bị từ chối        | Thông báo lỗi chứa `secplat-disallow-privileged` |
+| PE-2 | Apply Pod dùng `busybox:latest`                         | Bị từ chối        | Lỗi chứa `secplat-disallow-latest-tag`           |
+| PE-3 | Apply Pod không khai báo securityContext (chạy root)    | Bị từ chối        | Lỗi chứa `secplat-require-nonroot`               |
 | PE-4 | Apply Pod tuân thủ (`busybox:1.36`, non-root, drop ALL) | Được tạo, Running | `kubectl wait --for=condition=Ready`         |
 | PE-5 | Apply Pod privileged ở `vuln-lab`                       | Không bị chặn     | Đúng phạm vi theo nhãn namespace             |
 
@@ -779,10 +779,10 @@ make test-policy CLUSTER=team-a
 Chạy tay để demo:
 
 ```bash
-cd ~/vdt/Sec-Platform-VDT/workload/tests/fixtures
+cd ~/secplat/sec-platform/workload/tests/fixtures
 kw -n policy-lab apply -f pod-privileged.yaml
 # Error from server: admission webhook "...kyverno.svc-fail" denied the request: ...
-#   [vdt-disallow-privileged] Privileged containers are not allowed.
+#   [secplat-disallow-privileged] Privileged containers are not allowed.
 kw -n policy-lab apply -f pod-latest.yaml        # bị chặn
 kw -n policy-lab apply -f pod-root.yaml          # bị chặn
 kw -n policy-lab apply -f pod-compliant.yaml     # pod/pt-compliant created
@@ -886,7 +886,7 @@ spec:
 ```yaml
 # CI cho workload baseline.
 # - lint: chạy trên runner GitHub (không cần cluster)
-# - apply/test/e2e: chạy trên self-hosted runner đặt ngay trên VM (nhãn vdt-vm), kubectl trỏ admin cluster
+# - apply/test/e2e: chạy trên self-hosted runner đặt ngay trên VM (nhãn secplat-vm), kubectl trỏ admin cluster
 name: workload-baseline
 on:
   push:
@@ -901,7 +901,7 @@ on:
   schedule:
     - cron: "0 18 * * *"        # 01:00 giờ Việt Nam: e2e hằng đêm
 concurrency:
-  group: vdt-baseline
+  group: secplat-baseline
   cancel-in-progress: false
 
 jobs:
@@ -921,7 +921,7 @@ jobs:
   apply:
     needs: lint
     if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, vdt-vm]
+    runs-on: [self-hosted, secplat-vm]
     steps:
       - uses: actions/checkout@v4
       - name: Đồng bộ HelmChartProxy / ClusterResourceSet lên admin
@@ -931,7 +931,7 @@ jobs:
 
   test:
     needs: apply
-    runs-on: [self-hosted, vdt-vm]
+    runs-on: [self-hosted, secplat-vm]
     steps:
       - uses: actions/checkout@v4
       - run: make test-runtime CLUSTER=capi-quickstart
@@ -940,7 +940,7 @@ jobs:
   e2e:
     needs: apply
     if: github.event_name == 'schedule' || inputs.e2e
-    runs-on: [self-hosted, vdt-vm]
+    runs-on: [self-hosted, secplat-vm]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -954,7 +954,7 @@ jobs:
 
 ### 7.3 Cài self-hosted runner trên VM
 
-1.  GitHub repo → **Settings → Actions → Runners → New self-hosted runner** → Linux x64. Làm theo các lệnh GitHub hiển thị (tải, `./config.sh --url ... --token ...`), khi được hỏi nhãn thì thêm `vdt-vm`.
+1.  GitHub repo → **Settings → Actions → Runners → New self-hosted runner** → Linux x64. Làm theo các lệnh GitHub hiển thị (tải, `./config.sh --url ... --token ...`), khi được hỏi nhãn thì thêm `secplat-vm`.
 2.  Chạy runner dưới user `duong` (đã có kubeconfig admin và quyền docker), cài thành service: `sudo ./svc.sh install duong && sudo ./svc.sh start`.
 3.  Kiểm tra user runner có đủ: đăng nhập bằng user đó, chạy `bash scripts/preflight.sh` trong thư mục repo, phải ra 0 FAIL.
 4.  Bí mật: e2e và test không cần token. Nếu thêm bước `make scan` vào CI, lưu `DOJO_API_KEY` trong **Settings → Secrets → Actions** và truyền qua `env:`.
@@ -1017,7 +1017,7 @@ lint: ## shellcheck + yamllint (cần cài sẵn)
 | RT-1 FAIL "pod vẫn chạy"           | `kw -n falco logs deploy/falco-talon`                                                                                                                    | Rule Talon không khớp (thiếu `k8s.ns.name` trong alert) hoặc RBAC của Talon                                                     |
 | PE-\* FAIL "lỗi khác"              | Đọc thông báo lỗi in ra                                                                                                                                  | Thường do Kyverno chưa sẵn sàng (webhook timeout); chạy lại                                                                     |
 | kube-bench lỗi version             | `kw -n security-scan logs job/kube-bench`                                                                                                                | Thêm `--benchmark cis-x.y` vào `kube-bench-job.yaml.tpl`                                                                        |
-| Đổi phiên bản chart làm hỏng       | `kubectl get helmchartproxy vdt-kyverno -o yaml`                                                                                                         | Pin `version:` trong HelmChartProxy sau khi đã chạy ổn; Kyverno bản mới có thể đánh dấu `validationFailureAction` là deprecated |
+| Đổi phiên bản chart làm hỏng       | `kubectl get helmchartproxy secplat-kyverno -o yaml`                                                                                                         | Pin `version:` trong HelmChartProxy sau khi đã chạy ổn; Kyverno bản mới có thể đánh dấu `validationFailureAction` là deprecated |
 
 ---
 
@@ -1509,7 +1509,7 @@ wait_for "Kyverno admission controller" "$T" "kw -n kyverno rollout status deplo
 policy_ready() {
   [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
-for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
+for p in secplat-disallow-privileged secplat-disallow-latest-tag secplat-require-nonroot; do
   wait_for "ValidatingPolicy $p Ready" "$T" "policy_ready $p"
 done
 
@@ -1573,7 +1573,7 @@ egress_ok() { kw -n "$NS" exec "$P2" -- timeout 5 bash -c 'exec 3<>/dev/tcp/kube
 NET_CHECK=1
 egress_ok >/dev/null 2>&1 || { warn "RT-2: pod chưa kết nối được API trước khi test, bỏ qua kiểm tra cắt mạng"; NET_CHECK=0; }
 kw -n "$NS" exec "$P2" -- sh -c 'cp /bin/sleep /tmp/xmrig && /tmp/xmrig 1' >/dev/null 2>&1 || true
-if poll 60 falco_has "VDT Miner Binary Executed" "$P2"; then ok "RT-2 Falco phát hiện (custom rule VDT Miner Binary Executed)"
+if poll 60 falco_has "Miner Binary Executed" "$P2"; then ok "RT-2 Falco phát hiện (custom rule Miner Binary Executed)"
 else bad "RT-2 không thấy alert custom rule cho $P2"; fi
 labeled() { [ "$(kw -n "$NS" get pod "$P2" -o jsonpath='{.metadata.labels.quarantine}')" = true ]; }
 if poll 60 labeled; then ok "RT-2 Talon gắn nhãn quarantine=true cho $P2"
@@ -1611,9 +1611,9 @@ summary
 ```bash
 #!/usr/bin/env bash
 # policy-tests.sh [cluster]: kịch bản Policy Enforcement (Kyverno, namespace policy-lab)
-#   PE-1 container privileged           -> bị chặn (vdt-disallow-privileged)
-#   PE-2 image tag :latest              -> bị chặn (vdt-disallow-latest-tag)
-#   PE-3 pod chạy root, thiếu runAsNonRoot -> bị chặn (vdt-require-nonroot)
+#   PE-1 container privileged           -> bị chặn (secplat-disallow-privileged)
+#   PE-2 image tag :latest              -> bị chặn (secplat-disallow-latest-tag)
+#   PE-3 pod chạy root, thiếu runAsNonRoot -> bị chặn (secplat-require-nonroot)
 #   PE-4 pod tuân thủ                    -> được tạo và Running (đối chứng dương)
 #   PE-5 pod privileged ở vuln-lab       -> không bị chặn (policy chỉ áp theo nhãn namespace)
 # PE-1..3, PE-5 dùng --dry-run=server: đi qua admission webhook thật nhưng không tạo object.
@@ -1628,7 +1628,7 @@ NS=policy-lab
 policy_ready() {
   [ "$(kw get validatingpolicy "$1" -o jsonpath='{.status.conditionStatus.ready}' 2>/dev/null)" = true ]
 }
-for p in vdt-disallow-privileged vdt-disallow-latest-tag vdt-require-nonroot; do
+for p in secplat-disallow-privileged secplat-disallow-latest-tag secplat-require-nonroot; do
   poll 300 policy_ready "$p" || die "ValidatingPolicy $p chưa Ready (chạy verify.sh trước)"
 done
 
@@ -1644,9 +1644,9 @@ expect_denied() { # expect_denied <id> <mô tả> <file> <tên policy>
 }
 
 log "Kịch bản Policy Enforcement trên $CLUSTER_NAME"
-expect_denied PE-1 "Container privileged" "$FX/pod-privileged.yaml" vdt-disallow-privileged
-expect_denied PE-2 "Image tag :latest" "$FX/pod-latest.yaml" vdt-disallow-latest-tag
-expect_denied PE-3 "Pod chạy root (thiếu runAsNonRoot)" "$FX/pod-root.yaml" vdt-require-nonroot
+expect_denied PE-1 "Container privileged" "$FX/pod-privileged.yaml" secplat-disallow-privileged
+expect_denied PE-2 "Image tag :latest" "$FX/pod-latest.yaml" secplat-disallow-latest-tag
+expect_denied PE-3 "Pod chạy root (thiếu runAsNonRoot)" "$FX/pod-root.yaml" secplat-require-nonroot
 
 kw -n "$NS" delete pod pt-compliant --ignore-not-found --wait=true >/dev/null 2>&1 || true
 if kw -n "$NS" apply -f "$FX/pod-compliant.yaml" >/dev/null 2>&1 \
