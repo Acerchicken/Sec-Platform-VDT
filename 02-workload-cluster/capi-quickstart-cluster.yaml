@@ -6,7 +6,7 @@
 # Nhãn trên Cluster là công tắc cơ chế tự cài (CAAPH HelmChartProxy + ClusterResourceSet, xem workload/addons/):
 #   security-baseline=enabled  Falco, Sidekick, Talon, Kyverno, namespace, NetworkPolicy, ValidatingPolicy; vào lịch scan
 #   lab-target=enabled         Deployment vulnerable-workload (mục tiêu lab) trong vuln-lab
-#   cni=calico                 Calico VXLAN qua ClusterResourceSet vdt-calico. KHÔNG gắn cho cluster đã cài Calico tay
+#   cni=calico                 Calico VXLAN qua ClusterResourceSet secplat-calico. KHÔNG gắn cho cluster đã cài Calico tay
 #                              (calico.yaml); cluster mới: gắn nhãn này, hoặc dùng `make provision NAME=...`
 ---
 apiVersion: cluster.x-k8s.io/v1beta2

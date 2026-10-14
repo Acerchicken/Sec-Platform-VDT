@@ -5,7 +5,7 @@
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
-  name: vdt-disallow-privileged
+  name: secplat-disallow-privileged
   annotations:
     policies.kyverno.io/title: Disallow privileged containers
     policies.kyverno.io/severity: high
@@ -28,12 +28,12 @@ spec:
   validations:
     - expression: >-
         variables.allContainers.all(c, c.?securityContext.?privileged.orValue(false) == false)
-      message: "[vdt-disallow-privileged] Privileged containers are not allowed."
+      message: "[secplat-disallow-privileged] Privileged containers are not allowed."
 ---
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
-  name: vdt-disallow-latest-tag
+  name: secplat-disallow-latest-tag
   annotations:
     policies.kyverno.io/title: Require explicit, non-latest image tag
     policies.kyverno.io/severity: medium
@@ -54,15 +54,15 @@ spec:
     # Có tag = có ':' sau dấu '/' cuối (không nhầm cổng registry, vd. registry:5000/app); digest '@sha256:' cũng được
     - expression: >-
         object.spec.containers.all(c, c.image.lastIndexOf(':') > c.image.lastIndexOf('/'))
-      message: "[vdt-disallow-latest-tag] Image must have an explicit tag."
+      message: "[secplat-disallow-latest-tag] Image must have an explicit tag."
     - expression: >-
         object.spec.containers.all(c, !c.image.endsWith(':latest'))
-      message: "[vdt-disallow-latest-tag] Image tag ':latest' is not allowed."
+      message: "[secplat-disallow-latest-tag] Image tag ':latest' is not allowed."
 ---
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
-  name: vdt-require-nonroot
+  name: secplat-require-nonroot
   annotations:
     policies.kyverno.io/title: Require runAsNonRoot
     policies.kyverno.io/severity: high
@@ -82,4 +82,4 @@ spec:
   validations:
     - expression: >-
         object.spec.?securityContext.?runAsNonRoot.orValue(false) == true
-      message: "[vdt-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."
+      message: "[secplat-require-nonroot] Pod must set spec.securityContext.runAsNonRoot=true."

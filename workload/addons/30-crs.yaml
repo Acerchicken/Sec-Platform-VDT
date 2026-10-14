@@ -2,7 +2,7 @@
 apiVersion: addons.cluster.x-k8s.io/v1beta2
 kind: ClusterResourceSet
 metadata:
-  name: vdt-calico
+  name: secplat-calico
 spec:
   strategy: ApplyOnce
   clusterSelector:
@@ -15,7 +15,7 @@ spec:
 apiVersion: addons.cluster.x-k8s.io/v1beta2
 kind: ClusterResourceSet
 metadata:
-  name: vdt-security-baseline
+  name: secplat-security-baseline
 spec:
   strategy: Reconcile          # sửa manifest + chạy lại render.sh -> tự đồng bộ xuống mọi cluster
   clusterSelector:
@@ -32,7 +32,7 @@ spec:
 apiVersion: addons.cluster.x-k8s.io/v1beta2
 kind: ClusterResourceSet
 metadata:
-  name: vdt-lab-target
+  name: secplat-lab-target
 spec:
   strategy: ApplyOnce
   clusterSelector:

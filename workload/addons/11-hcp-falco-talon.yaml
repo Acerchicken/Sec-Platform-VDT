@@ -2,7 +2,7 @@
 apiVersion: addons.cluster.x-k8s.io/v1alpha1
 kind: HelmChartProxy
 metadata:
-  name: vdt-falco-talon
+  name: secplat-falco-talon
 spec:
   clusterSelector:
     matchLabels:
@@ -48,7 +48,7 @@ spec:
           description: RT-2, chay binary dao coin thi gan nhan quarantine (NetworkPolicy cat mang)
           match:
             rules:
-              - VDT Miner Binary Executed
+              - Miner Binary Executed
             output_fields:
               - k8s.ns.name=vuln-lab
           actions:
