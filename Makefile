@@ -4,11 +4,13 @@ SHELL := /bin/bash
 CLUSTER ?= capi-quickstart
 NAME ?=
 
-.PHONY: help deps preflight addons provision verify scan test-runtime test-policy test e2e lint
+.PHONY: help deps admin preflight addons provision verify scan test-runtime test-policy test e2e lint
 help: ## Liệt kê lệnh
 > @grep -E '^[a-z0-9-]+:.*## ' Makefile | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
 deps: ## Cài package/binary cần cho Guide 1 + 2 (= bash scripts/install-deps.sh)
 > ./scripts/install-deps.sh
+admin: ## Dựng toàn bộ admin cluster (Guide 1) bằng 1 lệnh; cài lại sạch DefectDojo: bash scripts/deploy-admin.sh --reset-dojo
+> ./scripts/deploy-admin.sh
 preflight: ## Kiểm tra lệnh/host/admin cluster (cài thiếu: bash scripts/preflight.sh --install)
 > ./scripts/preflight.sh
 addons: ## Nạp ConfigMap + apply HelmChartProxy/ClusterResourceSet lên admin

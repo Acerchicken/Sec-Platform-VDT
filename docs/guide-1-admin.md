@@ -21,6 +21,17 @@ Luồng dữ liệu phía admin:
 
 Quy ước: mọi lệnh chạy trên VM, thư mục `~/secplat`, `kubectl` mặc định trỏ admin cluster (context `kind-kind`). `kw`/`hw` là kubectl/helm trỏ một workload cluster, định nghĩa trong `env.sh` (Bước 1).
 
+**Chạy tự động cả Guide 1 bằng 1 lệnh** (sau khi đã clone repo ở Bước 0.1; script tự gọi `install-deps.sh` nếu thiếu lệnh, chạy lại bao nhiêu lần cũng được, log ở `~/secplat/deploy-admin.log`):
+
+```bash
+cd ~/secplat/sec-platform && git pull
+bash scripts/deploy-admin.sh            # hoặc: make admin
+# lần đầu nếu script báo phải SSH lại (nhóm docker): đăng xuất, SSH lại, chạy lại đúng lệnh trên
+# cài lại sạch DefectDojo (xóa cả dữ liệu): bash scripts/deploy-admin.sh --reset-dojo
+```
+
+Script làm Bước 1 → 5 và kiểm tra Bước 8, rồi in URL, mật khẩu và lệnh SSH tunnel. Còn lại làm tay: SSD (0.2, 0.4) và dashboard Grafana (Bước 7). Các bước dưới đây là bản làm tay tương đương.
+
 ---
 
 ## Bước 0 – Chuẩn bị host (repo, package, Docker, sysctl; SSD tùy chọn)

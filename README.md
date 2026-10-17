@@ -15,8 +15,8 @@ workload/addons/                             Admin: HelmChartProxy (Falco, Talon
 workload/manifests/                          Applied to workloads by CRS: namespaces, Kyverno ValidatingPolicy (CEL), quarantine NetworkPolicy, lab target
 workload/scan/                               run-scans.sh + Job templates (loaded into the scan-scripts ConfigMap)
 workload/tests/                              verify, RT-1..3, PE-1..5, e2e, fixtures
-scripts/                                     install-deps.sh, preflight.sh, lib.sh, render.sh, provision-cluster.sh, scan-now.sh
-Makefile, env.sh, env.example                Entry points: make deps | preflight | addons | provision | verify | scan | test | e2e
+scripts/                                     install-deps.sh, deploy-admin.sh, preflight.sh, lib.sh, render.sh, provision-cluster.sh, scan-now.sh
+Makefile, env.sh, env.example                Entry points: make deps | admin | preflight | addons | provision | verify | scan | test | e2e
 docs/                                        Guide 1/2 (Admin) and Guide 2/2 (Workload), in Vietnamese
 ```
 
@@ -41,6 +41,15 @@ After Guide 1, `bash scripts/preflight.sh` (or `make preflight`) checks the VM a
 All commands run on the VM, from the repo root, with kubectl pointing at the admin cluster (`kind-kind`).
 
 ## Deployment order
+
+Guide 1 in one command (idempotent, safe to re-run; log in `~/secplat/deploy-admin.log`):
+
+```bash
+cd ~/secplat/sec-platform && git pull
+bash scripts/deploy-admin.sh          # or: make admin; add --reset-dojo to wipe and reinstall DefectDojo
+```
+
+The manual equivalent:
 
 ```bash
 # Guide 1 – Admin
