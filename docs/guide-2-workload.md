@@ -35,6 +35,16 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 
 ---
 
+**Chạy tự động cả Guide 2 bằng 1 lệnh** (sau khi `deploy-admin.sh` xong; chạy lại bao nhiêu lần cũng được, log ở `~/secplat/deploy-workload.log`):
+
+```bash
+cd ~/secplat/sec-platform && git pull
+bash scripts/deploy-workload.sh            # hoặc: make workload   (cluster capi-quickstart, dùng trong demo)
+# cluster khác: bash scripts/deploy-workload.sh team-a      bỏ lượt scan trước: --no-scan
+```
+
+Script làm mục 2 (`make addons`, bật CronJob), mục 3 (cấp phát cluster mới, hoặc đưa `capi-quickstart` có sẵn vào cơ chế tự cài như 3.2), chờ `make verify`, rồi chuẩn bị demo (kéo sẵn image, chạy trước 1 lượt scan vào DefectDojo). Các mục dưới đây là bản làm tay tương đương.
+
 ## 1. Chuẩn bị repo (một lần)
 
 Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
