@@ -13,7 +13,7 @@ wait_for "Falcosidekick" "$T" "kw -n falco rollout status deploy/falco-falcoside
 wait_for "Falco-Talon" "$T" "kw -n falco rollout status deploy/falco-talon --timeout=10s"
 
 sidekick_has() {
-  kw -n falco logs deploy/falco-falcosidekick --tail=-1 2>/dev/null | grep 'Enabled Outputs' | grep -q "$1"
+  kw -n falco logs deploy/falco-falcosidekick --tail=-1 2>/dev/null | grep -i 'Enabled Outputs' | grep -qi "$1"   # tên output đổi hoa/thường giữa các bản (WebHook/Webhook)
 }
 wait_for "Falcosidekick bật output Loki" 120 "sidekick_has Loki"
 wait_for "Falcosidekick bật output WebHook (-> Talon)" 120 "sidekick_has WebHook"
