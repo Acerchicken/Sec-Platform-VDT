@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy-admin.sh: dựng TOÀN BỘ admin cluster theo Guide 1 bằng một lệnh.
 #   kind + CAPI/CAPD/CAAPH (+ClusterResourceSet) -> ClusterClass quick-start -> ~/secplat/env.sh
-#   -> DefectDojo -> Loki -> Grafana -> scan-orchestrator (CronJob, suspend) -> kiểm tra (Bước 8)
+#   -> DefectDojo -> Loki -> Grafana (+dashboard) -> scan-orchestrator (CronJob, suspend) -> kiểm tra (Bước 8)
 #
 #   cd ~/secplat/sec-platform && git pull
 #   bash scripts/deploy-admin.sh                      # hoặc: make admin
@@ -190,6 +190,10 @@ export GRAFANA_PASS DOJO_DB_PASS
 envsubst '${GRAFANA_PASS} ${DOJO_DB_PASS}' < "$ROOT/05-admin-apps/grafana/values.yaml.tpl" \
   | helm upgrade --install grafana grafana/grafana -n monitoring --create-namespace -f - --wait --timeout 10m >/dev/null
 ok "Grafana NodePort 32000"
+# Dashboard dựng sẵn (Bước 7): ConfigMap có nhãn grafana_dashboard=1, sidecar của Grafana tự nạp
+kubectl -n monitoring create configmap secplat-dashboards --from-file="$ROOT/05-admin-apps/grafana/dashboards/" \
+  --dry-run=client -o yaml | kubectl label -f - --local grafana_dashboard=1 -o yaml | kubectl apply -f - >/dev/null
+ok "dashboard 'Security Platform Overview' (Dashboards -> General)"
 
 # ---------------------------------------------------------------- 5) Scan orchestrator
 step "5. Scan orchestrator (Bước 5)"
@@ -235,6 +239,6 @@ Mở UI từ laptop (Guide 1, Bước 6):
   ssh -N -L 18080:$ADMIN_NODE_IP:31080 -L 13000:$ADMIN_NODE_IP:32000 $(id -un)@<IP_VM>
   -> DefectDojo http://127.0.0.1:18080   Grafana http://127.0.0.1:13000
 
-Tiếp theo: dashboard Grafana (Guide 1, Bước 7), rồi Guide 2 (make addons, make provision NAME=...).
+Tiếp theo: Guide 2 (make addons, make provision NAME=...).
 EOF
 [ "$fails" -eq 0 ]

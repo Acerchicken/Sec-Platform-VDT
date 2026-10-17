@@ -30,7 +30,7 @@ bash scripts/deploy-admin.sh            # hoặc: make admin
 # cài lại sạch DefectDojo (xóa cả dữ liệu): bash scripts/deploy-admin.sh --reset-dojo
 ```
 
-Script làm Bước 1 → 5 và kiểm tra Bước 8, rồi in URL, mật khẩu và lệnh SSH tunnel. Còn lại làm tay: SSD (0.2, 0.4) và dashboard Grafana (Bước 7). Các bước dưới đây là bản làm tay tương đương.
+Script làm Bước 1 → 5, dựng sẵn dashboard Bước 7 và kiểm tra Bước 8, rồi in URL, mật khẩu và lệnh SSH tunnel. Còn lại làm tay: SSD (0.2, 0.4). Các bước dưới đây là bản làm tay tương đương.
 
 ---
 
@@ -491,6 +491,8 @@ ssh -N -o ExitOnForwardFailure=yes \
 ---
 
 ## Bước 7 – Grafana dashboard tổng hợp
+
+Dashboard này đã có sẵn trong repo (`05-admin-apps/grafana/dashboards/secplat-overview.json`): `deploy-admin.sh` nạp nó vào ConfigMap `monitoring/secplat-dashboards` (nhãn `grafana_dashboard=1`), sidecar của Grafana tự import, mở Dashboards → *Security Platform Overview*. Làm tay theo các bước dưới chỉ khi muốn dựng lại từ đầu. Sửa trên UI xong thì *Export → JSON* đè vào file đó để lần deploy sau giữ được.
 
 Dashboards → New → Add visualization. Màu severity: Critical `#E02F44`, High `#FF780A`, Medium `#FAAD14`, Low `#56A64B`.
 
