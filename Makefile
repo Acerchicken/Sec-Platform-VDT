@@ -33,4 +33,4 @@ e2e: ## Cluster tạm: cấp phát -> tự cài -> test -> xoá
 > ./workload/tests/e2e.sh
 lint: ## shellcheck + yamllint (cần cài sẵn)
 > shellcheck scripts/*.sh workload/scan/*.sh workload/tests/*.sh
-> yamllint -d '{extends: relaxed, rules: {line-length: disable}}' workload .github
+> yamllint -d '{extends: relaxed, rules: {line-length: disable}}' workload

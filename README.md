@@ -30,7 +30,7 @@ An Ubuntu/Debian VM with sudo. On a clean VM, `scripts/install-deps.sh` installs
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-mkdir -p ~/secplat && cd ~/secplat && git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform && cd sec-platform
+mkdir -p ~/secplat && cd ~/secplat && git clone https://github.com/Acerchicken/Security-Platform-for-K8s.git sec-platform && cd sec-platform
 bash scripts/install-deps.sh                                    # re-login afterwards for the docker group
 # optional, only with a dedicated SSD: mount it at /mnt/ssd (Guide 1, Step 0.2), then instead:
 # DOCKER_DATA_ROOT=/mnt/ssd/docker bash scripts/install-deps.sh

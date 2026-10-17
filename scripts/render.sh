@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # render.sh: chạy trên VM, kubectl trỏ ADMIN cluster.
 # Nạp manifest/script vào ConfigMap, rồi apply HelmChartProxy + ClusterResourceSet.
-# Idempotent: chạy lại bao nhiêu lần cũng được (CI chạy mỗi lần push).
+# Idempotent: chạy lại bao nhiêu lần cũng được.
 # shellcheck disable=SC1091
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"

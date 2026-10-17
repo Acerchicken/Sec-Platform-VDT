@@ -2,7 +2,7 @@
 
 Điều kiện: đã xong **Hướng dẫn 1/2** (admin cluster có CAPI + CAAPH + ClusterResourceSet, DefectDojo, Loki, Grafana, CronJob orchestrator đang suspend).
 
-Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool được khai báo một lần ở admin. **Workload nào được cấp phát với nhãn `security-baseline=enabled` sẽ tự có đủ tool**, và CI chạy kịch bản test để chứng minh điều đó.
+Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool được khai báo một lần ở admin. **Workload nào được cấp phát với nhãn `security-baseline=enabled` sẽ tự có đủ tool**, và các kịch bản test (`make test`, `make e2e`) chứng minh điều đó.
 
 ---
 
@@ -10,7 +10,7 @@ Guide này không `helm install` tay vào từng workload nữa. Toàn bộ tool
 
 | Trụ cột                      | Công cụ                                                             | Chạy trong workload              | Kết quả                           | Ai cài / kích hoạt                  |
 |------------------------------|---------------------------------------------------------------------|----------------------------------|-----------------------------------|-------------------------------------|
-| Image & Static analysis      | Trivy `image` (vuln + secret); Trivy `config` cho manifest trong CI | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator (admin)        |
+| Image & Static analysis      | Trivy `image` (vuln + secret); Trivy `config` cho manifest (chạy tay) | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator (admin)        |
 | Cấu hình cụm theo CIS        | kube-bench `--targets node`                                         | Job ở `security-scan`            | DefectDojo                        | CronJob orchestrator                |
 | Sec runtime                  | Falco + Falcosidekick + Falco-Talon                                 | DaemonSet + Deployment ở `falco` | Loki/Grafana + phản ứng tự động   | HelmChartProxy (CAAPH)              |
 | **Policy enforcement (mới)** | Kyverno + 3 ValidatingPolicy (CEL)                                  | Admission webhook ở `kyverno`    | Chặn ngay khi apply, PolicyReport | HelmChartProxy + ClusterResourceSet |
@@ -47,12 +47,14 @@ Script làm mục 2 (`make addons`, bật CronJob), mục 3 (cấp phát cluster
 
 ## 1. Chuẩn bị repo (một lần)
 
-Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Sec-Platform-VDT) (public). VM, CI và mọi lần cấp phát đều lấy cấu hình từ repo này, nên mọi thay đổi chỉ cần commit + push; CI (mục 7) tự đồng bộ xuống admin cluster. Cấu trúc phần dùng cho guide này:
+Toàn bộ file nằm trong repo GitHub [`Acerchicken/Security-Platform-for-K8s`](https://github.com/Acerchicken/Security-Platform-for-K8s) (private). VM lấy cấu hình từ repo này: sửa, commit + push, rồi trên VM `git pull` và chạy lại `make addons` (hoặc `bash scripts/deploy-workload.sh`) để đồng bộ xuống mọi cluster. Cấu trúc phần dùng cho guide này:
 
     sec-platform/
-    ├── Makefile                         # make deps | preflight | addons | provision | verify | scan | test-* | e2e
+    ├── Makefile                         # make deps | admin | workload | preflight | addons | provision | verify | scan | test-* | e2e
     ├── env.example                      # copy thành .env nếu cần ghi đè
     ├── scripts/
+    │   ├── deploy-admin.sh              # Guide 1 bằng 1 lệnh
+    │   ├── deploy-workload.sh           # Guide 2 bằng 1 lệnh (+ chuẩn bị demo)
     │   ├── install-deps.sh              # cài package/binary trên VM (dùng chung với Guide 1, Bước 0.3)
     │   ├── preflight.sh                 # kiểm tra VM + admin cluster (--install gọi install-deps.sh)
     │   ├── lib.sh                       # hàm dùng chung (kw, use_cluster, wait_for)
@@ -64,14 +66,23 @@ Toàn bộ file nằm trong [repo GitHub](https://github.com/Acerchicken/Sec-Pla
     │   ├── manifests/                   # manifest CRS apply XUỐNG workload
     │   ├── scan/                        # run-scans.sh + template Job (orchestrator mount qua ConfigMap)
     │   └── tests/                       # verify, runtime-tests, policy-tests, e2e, fixtures
-    └── .github/workflows/baseline.yml   # CI
+
+Thư mục trên VM (giống nhau ở mọi guide):
+
+    ~/secplat/
+    ├── env.sh                        # dùng chung cho mọi guide: source ~/secplat/env.sh
+    ├── <cluster>.kubeconfig          # env.sh tự sinh, ví dụ capi-quickstart.kubeconfig
+    ├── manual/                       # chỉ Deploy Guide v2 (làm tay)
+    │   ├── manifests/
+    │   └── fixtures/
+    └── sec-platform/                 # repo clone, dùng cho Guide 1, Guide 2, make ...
 
 Đã làm Guide 1, Bước 0.1 thì repo đã có ở `~/secplat/sec-platform`: chỉ cần `cd ~/secplat/sec-platform && git pull`. VM khác (chưa có repo):
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git           # chỉ cần git để clone; phần còn lại do install-deps.sh cài
 mkdir -p ~/secplat && cd ~/secplat
-git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform   # lần sau: cd sec-platform && git pull
+git clone https://github.com/Acerchicken/Security-Platform-for-K8s.git sec-platform   # lần sau: cd sec-platform && git pull
 cd sec-platform
 chmod +x scripts/*.sh workload/scan/*.sh workload/tests/*.sh     # phòng khi clone mất quyền thực thi
 ```
@@ -445,7 +456,7 @@ Orchestrator ở admin gọi `run-scans.sh` cho từng cluster có nhãn. Script
 | Job                                                                 | Lệnh                                                 | Scan type DefectDojo    |
 |---------------------------------------------------------------------|------------------------------------------------------|-------------------------|
 | `trivy-<hash>` (mỗi image đang chạy trong `vuln-lab`, `policy-lab`) | `trivy image --scanners vuln,secret`                 | Trivy Scan              |
-| `kube-bench`                                                        | `kube-bench run --targets node --json`               | kube-bench Scan         |
+| `kube-bench`                                                        | `kube-bench run --targets node --json`               | kube-bench Scanner      |
 
 Chạy ngay, không chờ lịch:
 
@@ -461,7 +472,7 @@ kubectl -n scan-orchestrator logs -f job/$(kubectl -n scan-orchestrator get jobs
 
 Kết quả mong đợi: mỗi dòng `[<cluster>] ... -> HTTP 201` (lần sau là 200). Trong DefectDojo, Product `<cluster>` có CVE của `nginx:1.14.2` (ví dụ CVE-2021-3711) và mục kube-bench.
 
-**Static analysis cho manifest**: job `lint` của CI (mục 7) chạy `trivy config` trên `workload/` mỗi lần push, phát hiện cấu hình sai trong chính manifest trước khi chúng xuống cluster. `vulnerable-workload` cố ý sai nên sẽ luôn có finding; đó là kết quả đúng.
+**Static analysis cho manifest**: chạy `trivy config workload/` trên VM trước khi `make addons`, phát hiện cấu hình sai trong chính manifest trước khi chúng xuống cluster. `vulnerable-workload` cố ý sai nên sẽ luôn có finding; đó là kết quả đúng.
 
 `workload/scan/run-scans.sh`
 
@@ -506,17 +517,12 @@ run_job() { # run_job <template>: tạo Job, chờ xong, in JSON kết quả ra 
   K -n "$NS" logs "job/$JOB" | sed -n '/^{/,$p'
 }
 
-reimport() { # reimport <scan_type> <file> <test_title>: lỗi thì in body DefectDojo ra stderr
-  local code
-  jq -e . "$2" >/dev/null 2>&1 || {
-    echo "[$CLUSTER] $3 -> bỏ qua: kết quả không phải JSON hợp lệ ($(head -c 200 "$2" | tr '\n' ' '))" >&2; return 1; }
-  code="$(curl -sS -X POST "$DOJO_URL/api/v2/reimport-scan/" -H "Authorization: Token $DOJO_API_KEY" \
+reimport() { # reimport <scan_type> <file> <test_title>
+  curl -sS -f -X POST "$DOJO_URL/api/v2/reimport-scan/" -H "Authorization: Token $DOJO_API_KEY" \
     -F "scan_type=$1" -F "file=@$2" -F "test_title=$3" \
     -F "product_type_name=Tenant-POC" -F "product_name=$CLUSTER" -F "engagement_name=Scheduled Scan" \
     -F "auto_create_context=true" -F "close_old_findings=true" \
-    -o "$OUT/resp.txt" -w '%{http_code}')" || return 1
-  echo "[$CLUSTER] $3 -> HTTP $code"
-  case "$code" in 2??) ;; *) echo "  $(head -c 500 "$OUT/resp.txt")" >&2; return 1 ;; esac
+    -o /dev/null -w "[$CLUSTER] $3 -> HTTP %{http_code}\n"
 }
 
 K get ns "$NS" >/dev/null || { echo "thiếu namespace $NS (ClusterResourceSet chưa apply?)" >&2; exit 1; }
@@ -536,7 +542,7 @@ IMAGE=""
 # 2) CIS benchmark: kube-bench trên node worker
 JOB=kube-bench
 if run_job kube-bench-job.yaml.tpl > "$OUT/kube-bench.json"; then
-  reimport "kube-bench Scan" "$OUT/kube-bench.json" "kube-bench - $CLUSTER" || rc=1
+  reimport "kube-bench Scanner" "$OUT/kube-bench.json" "kube-bench - $CLUSTER" || rc=1
 else rc=1; fi
 exit "$rc"
 ```
@@ -663,7 +669,7 @@ curl -sG $LOKI_URL/loki/api/v1/query --data-urlencode 'query=count_over_time({ta
 
 Lưu ý:
 
-- Dùng `exec` **không có `-it`** trong script/CI: không có TTY thì rule "Terminal shell in container" không bắn, kịch bản chỉ phụ thuộc rule đang test. Demo tay với `-it` vẫn được, chỉ có thêm một alert.
+- Dùng `exec` **không có `-it`** trong script: không có TTY thì rule "Terminal shell in container" không bắn, kịch bản chỉ phụ thuộc rule đang test. Demo tay với `-it` vẫn được, chỉ có thêm một alert.
 - CAPD dùng chung kernel host: Falco trên node control-plane cũng thấy cùng syscall nhưng thiếu `k8s.*` (hiện `<NA>`). Bản trùng này không khớp rule Talon (lọc theo namespace) nên không gây phản ứng hai lần, chỉ làm Loki có log trùng.
 
 ---
@@ -877,7 +883,7 @@ spec:
 
 ---
 
-## 7. Tự động hoá và CI
+## 7. Tự động hoá
 
 ### 7.1 Chuỗi tự động
 
@@ -885,91 +891,12 @@ spec:
 |--------------------------------|----------------------------------------------------------------------------------------|------------------------------------|
 | Workload được cấp phát có nhãn | Calico, Falco, Sidekick, Talon, Kyverno, namespace, NetworkPolicy, policy, lab target  | CAAPH + ClusterResourceSet (admin) |
 | Mỗi 6 giờ                      | Trivy, kube-bench cho **mọi** cluster có nhãn → DefectDojo                              | CronJob orchestrator               |
-| Push lên `main`                | Lint, `trivy config`, `make addons` (đồng bộ cấu hình xuống mọi cluster), verify, test | CI                                 |
-| Hằng đêm / bấm tay             | Cấp phát cluster tạm → chờ tự cài → toàn bộ kịch bản → xoá                             | CI (e2e)                           |
-| ADMIN_NODE_IP đổi              | Chạy lại `make addons`; CAAPH (`Continuous`) tự `helm upgrade` địa chỉ Loki mới        | Bạn hoặc CI                        |
+| Đổi cấu hình trong repo        | `git pull` rồi `make addons`: đồng bộ xuống mọi cluster                                | Bạn                                |
+| ADMIN_NODE_IP đổi              | Chạy lại `make addons`; CAAPH (`Continuous`) tự `helm upgrade` địa chỉ Loki mới        | Bạn                                |
 
-### 7.2 Pipeline (GitHub Actions)
+Dựng lại toàn bộ từ đầu: `bash scripts/deploy-admin.sh` rồi `bash scripts/deploy-workload.sh` (xem đầu Guide 1 và đầu guide này). Lab không dùng CI.
 
-`.github/workflows/baseline.yml`
-
-```yaml
-# CI cho workload baseline.
-# - lint: chạy trên runner GitHub (không cần cluster)
-# - apply/test/e2e: chạy trên self-hosted runner đặt ngay trên VM (nhãn secplat-vm), kubectl trỏ admin cluster
-name: workload-baseline
-on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
-    inputs:
-      e2e:
-        description: "Chạy e2e (tạo cluster tạm, ~20-30 phút)"
-        type: boolean
-        default: false
-  schedule:
-    - cron: "0 18 * * *"        # 01:00 giờ Việt Nam: e2e hằng đêm
-concurrency:
-  group: secplat-baseline
-  cancel-in-progress: false
-
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: ShellCheck
-        run: shellcheck scripts/*.sh workload/scan/*.sh workload/tests/*.sh
-      - name: YAML lint
-        run: |
-          pipx run yamllint -d '{extends: relaxed, rules: {line-length: disable}}' workload .github
-      - name: Static analysis manifest (Trivy config, chỉ báo cáo)
-        run: |
-          docker run --rm -v "$PWD:/src" aquasec/trivy:latest config --severity HIGH,CRITICAL /src/workload
-
-  apply:
-    needs: lint
-    if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, secplat-vm]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Đồng bộ HelmChartProxy / ClusterResourceSet lên admin
-        run: make addons
-      - name: Kiểm tra baseline trên cluster hiện có
-        run: make verify CLUSTER=capi-quickstart
-
-  test:
-    needs: apply
-    runs-on: [self-hosted, secplat-vm]
-    steps:
-      - uses: actions/checkout@v4
-      - run: make test-runtime CLUSTER=capi-quickstart
-      - run: make test-policy CLUSTER=capi-quickstart
-
-  e2e:
-    needs: apply
-    if: github.event_name == 'schedule' || inputs.e2e
-    runs-on: [self-hosted, secplat-vm]
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cấp phát cluster tạm, chờ tự cài, chạy kịch bản, xoá
-        run: make e2e
-```
-
-- `lint` chạy trên runner GitHub, không cần cluster.
-- `apply`, `test`, `e2e` cần với tới admin cluster (nằm trong VM, không mở ra Internet), nên chạy trên **self-hosted runner đặt trên chính VM**.
-- Dùng GitLab thì chuyển 4 job này sang `.gitlab-ci.yml` với GitLab Runner trên VM, các lệnh `make` giữ nguyên.
-
-### 7.3 Cài self-hosted runner trên VM
-
-1.  GitHub repo → **Settings → Actions → Runners → New self-hosted runner** → Linux x64. Làm theo các lệnh GitHub hiển thị (tải, `./config.sh --url ... --token ...`), khi được hỏi nhãn thì thêm `secplat-vm`.
-2.  Chạy runner dưới user `duong` (đã có kubeconfig admin và quyền docker), cài thành service: `sudo ./svc.sh install duong && sudo ./svc.sh start`.
-3.  Kiểm tra user runner có đủ: đăng nhập bằng user đó, chạy `bash scripts/preflight.sh` trong thư mục repo, phải ra 0 FAIL.
-4.  Bí mật: e2e và test không cần token. Nếu thêm bước `make scan` vào CI, lưu `DOJO_API_KEY` trong **Settings → Secrets → Actions** và truyền qua `env:`.
-
-### 7.4 e2e: chứng minh "cấp phát là có bảo mật"
+### 7.2 e2e: chứng minh "cấp phát là có bảo mật"
 
 ```bash
 make e2e              # hoặc: KEEP=1 make e2e để giữ cluster lại debug
@@ -1011,7 +938,7 @@ e2e: ## Cluster tạm: cấp phát -> tự cài -> test -> xoá
 > ./workload/tests/e2e.sh
 lint: ## shellcheck + yamllint (cần cài sẵn)
 > shellcheck scripts/*.sh workload/scan/*.sh workload/tests/*.sh
-> yamllint -d '{extends: relaxed, rules: {line-length: disable}}' workload .github
+> yamllint -d '{extends: relaxed, rules: {line-length: disable}}' workload
 ```
 
 ---
@@ -1353,7 +1280,7 @@ wait_for() {
 #!/usr/bin/env bash
 # render.sh: chạy trên VM, kubectl trỏ ADMIN cluster.
 # Nạp manifest/script vào ConfigMap, rồi apply HelmChartProxy + ClusterResourceSet.
-# Idempotent: chạy lại bao nhiêu lần cũng được (CI chạy mỗi lần push).
+# Idempotent: chạy lại bao nhiêu lần cũng được .
 # shellcheck disable=SC1091
 source "$(dirname "$0")/lib.sh"
 cd "$ROOT"

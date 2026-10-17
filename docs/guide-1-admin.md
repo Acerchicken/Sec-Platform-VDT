@@ -21,6 +21,16 @@ Luồng dữ liệu phía admin:
 
 Quy ước: mọi lệnh chạy trên VM, thư mục `~/secplat`, `kubectl` mặc định trỏ admin cluster (context `kind-kind`). `kw`/`hw` là kubectl/helm trỏ một workload cluster, định nghĩa trong `env.sh` (Bước 1).
 
+Thư mục trên VM (giống nhau ở mọi guide):
+
+    ~/secplat/
+    ├── env.sh                        # dùng chung cho mọi guide: source ~/secplat/env.sh
+    ├── <cluster>.kubeconfig          # env.sh tự sinh, ví dụ capi-quickstart.kubeconfig
+    ├── manual/                       # chỉ Deploy Guide v2 (làm tay)
+    │   ├── manifests/
+    │   └── fixtures/
+    └── sec-platform/                 # repo clone, dùng cho Guide 1, Guide 2, make ...
+
 **Chạy tự động cả Guide 1 bằng 1 lệnh** (sau khi đã clone repo ở Bước 0.1; script tự gọi `install-deps.sh` nếu thiếu lệnh, chạy lại bao nhiêu lần cũng được, log ở `~/secplat/deploy-admin.log`):
 
 ```bash
@@ -43,7 +53,7 @@ Làm **trước khi tạo bất kỳ cụm nào**. Toàn bộ node kind/CAPD, im
 ```bash
 sudo apt-get update && sudo apt-get install -y git
 mkdir -p ~/secplat && cd ~/secplat
-git clone https://github.com/Acerchicken/Sec-Platform-VDT.git sec-platform   # lần sau: cd sec-platform && git pull
+git clone https://github.com/Acerchicken/Security-Platform-for-K8s.git sec-platform   # lần sau: cd sec-platform && git pull
 ```
 
 **0.2 (Tùy chọn) Format + mount SSD**: chỉ khi VM có ổ/phân vùng SSD riêng; VM chạy trên HDD hoặc chỉ có 1 ổ thì bỏ qua 0.2 và 0.4. Kiểm tra kỹ tên thiết bị, `mkfs` XÓA sạch ổ.
@@ -146,7 +156,7 @@ cat > ~/secplat/env.sh <<'EOF'
 export ADMIN_NODE_IP=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' kind-control-plane)
 export DOJO_URL=http://$ADMIN_NODE_IP:31080
 export LOKI_URL=http://$ADMIN_NODE_IP:31100
-export CLUSTER=${CLUSTER:-capi-quickstart}                 # workload đang thao tác; đổi: CLUSTER=team-a source env.sh
+export CLUSTER=${CLUSTER:-capi-quickstart}                 # workload đang thao tác; đổi: CLUSTER=team-a source ~/secplat/env.sh
 export WORKLOAD_KUBECONFIG="$HOME/secplat/$CLUSTER.kubeconfig"
 clusterctl get kubeconfig "$CLUSTER" > "$WORKLOAD_KUBECONFIG" 2>/dev/null || true
 kw() { kubectl --kubeconfig="$WORKLOAD_KUBECONFIG" "$@"; }
@@ -173,7 +183,7 @@ kubectl delete ns defectdojo --ignore-not-found --wait=true
 **b) Cài mới**
 
 ```bash
-cd ~/secplat && source env.sh      # cần ADMIN_NODE_IP
+cd ~/secplat && source ~/secplat/env.sh      # cần ADMIN_NODE_IP
 
 cat > defectdojo-value.yaml <<'EOV'
 host: localhost
